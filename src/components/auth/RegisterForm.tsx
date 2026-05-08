@@ -6,9 +6,9 @@ import { type FormEvent, useEffect, useState } from "react";
 import { useAuth } from "@/context/auth-context";
 import { ApiError, getValidationErrors } from "@/lib/api-client";
 import type { FieldErrors } from "@/types/auth";
-
-const inputClass =
-  "mt-2 block w-full rounded-md border border-zinc-800 bg-black px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 aria-invalid:border-red-500";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 // The hard-13 age gate is enforced server-side; this `max` is a UX hint that
 // keeps the date picker from offering visibly-too-young dates. The backend
@@ -87,33 +87,28 @@ export function RegisterForm() {
   return (
     <>
       <form className="mt-8 space-y-4" onSubmit={onSubmit}>
-        <div>
-          <label htmlFor="register-display-name" className="block text-sm font-medium">
-            Display name
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="register-display-name">Display name</Label>
+          <Input
             id="register-display-name"
             name="display_name"
             type="text"
             autoComplete="nickname"
             placeholder="How you'll appear publicly"
             aria-invalid={fieldErrors.display_name?.length ? true : undefined}
-            className={inputClass}
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
           />
           {fieldErrors.display_name?.map((error) => (
-            <p className="mt-2 text-sm text-red-500" key={error}>
+            <p className="text-sm text-destructive" key={error}>
               {error}
             </p>
           ))}
         </div>
 
-        <div>
-          <label htmlFor="register-email" className="block text-sm font-medium">
-            Email
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="register-email">Email</Label>
+          <Input
             id="register-email"
             name="email"
             type="email"
@@ -121,22 +116,19 @@ export function RegisterForm() {
             required
             placeholder="you@example.com"
             aria-invalid={fieldErrors.email?.length ? true : undefined}
-            className={inputClass}
             value={email}
             onChange={(event) => setEmail(event.target.value)}
           />
           {fieldErrors.email?.map((error) => (
-            <p className="mt-2 text-sm text-red-500" key={error}>
+            <p className="text-sm text-destructive" key={error}>
               {error}
             </p>
           ))}
         </div>
 
-        <div>
-          <label htmlFor="register-dob" className="block text-sm font-medium">
-            Date of birth
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="register-dob">Date of birth</Label>
+          <Input
             id="register-dob"
             name="date_of_birth"
             type="date"
@@ -144,23 +136,20 @@ export function RegisterForm() {
             required
             max={MAX_DOB}
             aria-invalid={fieldErrors.date_of_birth?.length ? true : undefined}
-            className={inputClass}
             value={dateOfBirth}
             onChange={(event) => setDateOfBirth(event.target.value)}
           />
           {fieldErrors.date_of_birth?.map((error) => (
-            <p className="mt-2 text-sm text-red-500" key={error}>
+            <p className="text-sm text-destructive" key={error}>
               {error}
             </p>
           ))}
-          <p className="mt-1 text-xs text-zinc-500">You must be at least 13 to register.</p>
+          <p className="text-xs text-muted-foreground">You must be at least 13 to register.</p>
         </div>
 
-        <div>
-          <label htmlFor="register-password" className="block text-sm font-medium">
-            Password
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="register-password">Password</Label>
+          <Input
             id="register-password"
             name="password"
             type="password"
@@ -168,23 +157,20 @@ export function RegisterForm() {
             required
             minLength={8}
             aria-invalid={fieldErrors.password?.length ? true : undefined}
-            className={inputClass}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
           {fieldErrors.password?.map((error) => (
-            <p className="mt-2 text-sm text-red-500" key={error}>
+            <p className="text-sm text-destructive" key={error}>
               {error}
             </p>
           ))}
-          <p className="mt-1 text-xs text-zinc-500">At least 8 characters.</p>
+          <p className="text-xs text-muted-foreground">At least 8 characters.</p>
         </div>
 
-        <div>
-          <label htmlFor="register-password-confirm" className="block text-sm font-medium">
-            Confirm password
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="register-password-confirm">Confirm password</Label>
+          <Input
             id="register-password-confirm"
             name="password_confirmation"
             type="password"
@@ -192,29 +178,24 @@ export function RegisterForm() {
             required
             minLength={8}
             aria-invalid={fieldErrors.password_confirmation?.length ? true : undefined}
-            className={inputClass}
             value={passwordConfirmation}
             onChange={(event) => setPasswordConfirmation(event.target.value)}
           />
           {fieldErrors.password_confirmation?.map((error) => (
-            <p className="mt-2 text-sm text-red-500" key={error}>
+            <p className="text-sm text-destructive" key={error}>
               {error}
             </p>
           ))}
         </div>
 
-        {formError ? <p className="text-sm text-red-500">{formError}</p> : null}
+        {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
 
-        <button
-          type="submit"
-          className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-          disabled={busy}
-        >
+        <Button type="submit" size="lg" className="w-full" disabled={busy}>
           {busy ? "Creating account…" : "Create account"}
-        </button>
+        </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-zinc-500">
+      <p className="mt-6 text-center text-sm text-muted-foreground">
         Already have an account?{" "}
         <Link href="/login" className="font-medium text-primary hover:underline">
           Sign in

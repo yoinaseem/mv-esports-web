@@ -6,9 +6,9 @@ import { type FormEvent, useEffect, useState } from "react";
 import { useAuth } from "@/context/auth-context";
 import { ApiError, getValidationErrors } from "@/lib/api-client";
 import type { FieldErrors } from "@/types/auth";
-
-const inputClass =
-  "mt-2 block w-full rounded-md border border-zinc-800 bg-black px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 aria-invalid:border-red-500";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export function LoginForm() {
   const { login, isAuthenticated, loading } = useAuth();
@@ -64,11 +64,9 @@ export function LoginForm() {
   return (
     <>
       <form className="mt-8 space-y-4" onSubmit={onSubmit}>
-        <div>
-          <label htmlFor="login-email" className="block text-sm font-medium">
-            Email
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="login-email">Email</Label>
+          <Input
             id="login-email"
             name="email"
             type="email"
@@ -76,51 +74,43 @@ export function LoginForm() {
             required
             placeholder="you@example.com"
             aria-invalid={fieldErrors.email?.length ? true : undefined}
-            className={inputClass}
             value={email}
             onChange={(event) => setEmail(event.target.value)}
           />
           {fieldErrors.email?.map((error) => (
-            <p className="mt-2 text-sm text-red-500" key={error}>
+            <p className="text-sm text-destructive" key={error}>
               {error}
             </p>
           ))}
         </div>
 
-        <div>
-          <label htmlFor="login-password" className="block text-sm font-medium">
-            Password
-          </label>
-          <input
+        <div className="space-y-2">
+          <Label htmlFor="login-password">Password</Label>
+          <Input
             id="login-password"
             name="password"
             type="password"
             autoComplete="current-password"
             required
             aria-invalid={fieldErrors.password?.length ? true : undefined}
-            className={inputClass}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
           {fieldErrors.password?.map((error) => (
-            <p className="mt-2 text-sm text-red-500" key={error}>
+            <p className="text-sm text-destructive" key={error}>
               {error}
             </p>
           ))}
         </div>
 
-        {formError ? <p className="text-sm text-red-500">{formError}</p> : null}
+        {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
 
-        <button
-          type="submit"
-          className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-          disabled={busy}
-        >
+        <Button type="submit" size="lg" className="w-full" disabled={busy}>
           {busy ? "Signing in…" : "Sign in"}
-        </button>
+        </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-zinc-500">
+      <p className="mt-6 text-center text-sm text-muted-foreground">
         No account yet?{" "}
         <Link href="/register" className="font-medium text-primary hover:underline">
           Create one
