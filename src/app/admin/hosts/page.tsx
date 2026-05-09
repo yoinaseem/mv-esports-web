@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -67,29 +67,33 @@ function statusLabel(status: HostStatus): string {
 export default function AdminHostsPage() {
   const [filter, setFilter] = useState<FilterValue>("pending");
   const [hosts, setHosts] = useState<TournamentHost[]>([]);
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [pendingActionId, setPendingActionId] = useState<number | null>(null);
+  const [refetchKey, setRefetchKey] = useState(0);
+  const [loading, startTransition] = useTransition();
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletingHost, setDeletingHost] = useState<TournamentHost | null>(null);
 
-  const fetchHosts = useCallback(async () => {
-    setLoading(true);
-    setLoadError("");
-    try {
-      const list = await listHosts(filter === "all" ? {} : { status: filter });
-      setHosts(list);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Couldn't load host applications.");
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
-
   useEffect(() => {
-    void fetchHosts();
-  }, [fetchHosts]);
+    let cancelled = false;
+    startTransition(async () => {
+      try {
+        const list = await listHosts(filter === "all" ? {} : { status: filter });
+        if (cancelled) return;
+        setHosts(list);
+        setLoadError("");
+      } catch (error) {
+        if (cancelled) return;
+        setLoadError(error instanceof Error ? error.message : "Couldn't load host applications.");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [filter, refetchKey]);
+
+  const refetch = () => setRefetchKey((k) => k + 1);
 
   const handleSetStatus = async (host: TournamentHost, status: HostStatus) => {
     setPendingActionId(host.id);
@@ -224,7 +228,7 @@ export default function AdminHostsPage() {
               <TableRow>
                 <TableCell colSpan={5} className="py-12 text-center text-sm text-destructive">
                   {loadError}{" "}
-                  <button type="button" onClick={() => void fetchHosts()} className="font-medium text-primary hover:underline">
+                  <button type="button" onClick={refetch} className="font-medium text-primary hover:underline">
                     Retry
                   </button>
                 </TableCell>

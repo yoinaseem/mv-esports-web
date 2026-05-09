@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -36,9 +36,10 @@ import { DeleteGameDialog } from "@/components/games/DeleteGameDialog";
 
 export default function AdminGamesPage() {
   const [games, setGames] = useState<Game[]>([]);
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [includeInactive, setIncludeInactive] = useState(true);
+  const [refetchKey, setRefetchKey] = useState(0);
+  const [loading, startTransition] = useTransition();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<Game | null>(null);
@@ -46,22 +47,25 @@ export default function AdminGamesPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletingGame, setDeletingGame] = useState<Game | null>(null);
 
-  const fetchGames = useCallback(async () => {
-    setLoading(true);
-    setLoadError("");
-    try {
-      const list = await listGames({ includeInactive });
-      setGames(list);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Couldn't load games.");
-    } finally {
-      setLoading(false);
-    }
-  }, [includeInactive]);
-
   useEffect(() => {
-    void fetchGames();
-  }, [fetchGames]);
+    let cancelled = false;
+    startTransition(async () => {
+      try {
+        const list = await listGames({ includeInactive });
+        if (cancelled) return;
+        setGames(list);
+        setLoadError("");
+      } catch (error) {
+        if (cancelled) return;
+        setLoadError(error instanceof Error ? error.message : "Couldn't load games.");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [includeInactive, refetchKey]);
+
+  const refetch = () => setRefetchKey((k) => k + 1);
 
   const openCreate = () => {
     setEditingGame(null);
@@ -149,7 +153,7 @@ export default function AdminGamesPage() {
               <TableRow>
                 <TableCell colSpan={5} className="py-12 text-center text-sm text-destructive">
                   {loadError}{" "}
-                  <button type="button" onClick={() => void fetchGames()} className="font-medium text-primary hover:underline">
+                  <button type="button" onClick={refetch} className="font-medium text-primary hover:underline">
                     Retry
                   </button>
                 </TableCell>

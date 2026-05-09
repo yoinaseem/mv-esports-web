@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -96,9 +96,10 @@ export default function AdminTournamentsPage() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [hosts, setHosts] = useState<TournamentHost[]>([]);
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [pendingActionId, setPendingActionId] = useState<number | null>(null);
+  const [refetchKey, setRefetchKey] = useState(0);
+  const [loading, startTransition] = useTransition();
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancellingTournament, setCancellingTournament] = useState<Tournament | null>(null);
@@ -106,31 +107,34 @@ export default function AdminTournamentsPage() {
   const gameMap = useMemo(() => new Map(games.map((g) => [g.id, g])), [games]);
   const hostMap = useMemo(() => new Map(hosts.map((h) => [h.id, h])), [hosts]);
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    setLoadError("");
-    try {
-      const [tournamentList, gameList, hostList] = await Promise.all([
-        listTournaments({
-          includeDrafts: true,
-          status: filter === "pending_review" ? "draft_pending_review" : undefined,
-        }),
-        listGames({ includeInactive: true }),
-        listHosts(),
-      ]);
-      setTournaments(tournamentList);
-      setGames(gameList);
-      setHosts(hostList);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Couldn't load tournaments.");
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
-
   useEffect(() => {
-    void fetchAll();
-  }, [fetchAll]);
+    let cancelled = false;
+    startTransition(async () => {
+      try {
+        const [tournamentList, gameList, hostList] = await Promise.all([
+          listTournaments({
+            includeDrafts: true,
+            status: filter === "pending_review" ? "draft_pending_review" : undefined,
+          }),
+          listGames({ includeInactive: true }),
+          listHosts(),
+        ]);
+        if (cancelled) return;
+        setTournaments(tournamentList);
+        setGames(gameList);
+        setHosts(hostList);
+        setLoadError("");
+      } catch (error) {
+        if (cancelled) return;
+        setLoadError(error instanceof Error ? error.message : "Couldn't load tournaments.");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [filter, refetchKey]);
+
+  const refetch = () => setRefetchKey((k) => k + 1);
 
   const reconcile = useCallback(
     (updated: Tournament) => {
@@ -290,7 +294,7 @@ export default function AdminTournamentsPage() {
                   {loadError}{" "}
                   <button
                     type="button"
-                    onClick={() => void fetchAll()}
+                    onClick={refetch}
                     className="font-medium text-primary hover:underline"
                   >
                     Retry
