@@ -29,6 +29,12 @@ export type Tournament = {
   end_date: string;
   registration_opens_at: string | null;
   registration_closes_at: string | null;
+  // Lifecycle timestamps. started_at is stamped when seed-and-build flips
+  // status to InProgress; completed_at is stamped when the cascade flips to
+  // Completed. Cancelled tournaments leave completed_at null — the status
+  // enum carries the rest. Host-set start_date / end_date stay advisory.
+  started_at: string | null;
+  completed_at: string | null;
   stream_url: string | null;
   banner_url: string | null;
   max_participants: number | null;

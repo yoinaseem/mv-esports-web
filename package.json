@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
+    "@g-loot/react-tournament-brackets": "1.0.31-rc",
     "@hugeicons/core-free-icons": "^4.1.2",
     "@hugeicons/react": "^1.1.6",
     "class-variance-authority": "^0.7.1",

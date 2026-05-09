@@ -32,6 +32,9 @@ export type StageDraft = {
   qualRuleType: QualificationRuleType;
   qualTopN: string;
   qualPerGroup: string;
+  // Default series length applied to every match this stage generates. Stored
+  // as a string for clean Select binding; coerced to int on submit.
+  bestOf: string;
 };
 
 export function newStageDraft(overrides: Partial<StageDraft> = {}): StageDraft {
@@ -50,9 +53,12 @@ export function newStageDraft(overrides: Partial<StageDraft> = {}): StageDraft {
     qualRuleType: "all",
     qualTopN: "8",
     qualPerGroup: "2",
+    bestOf: "1",
     ...overrides,
   };
 }
+
+const BEST_OF_OPTIONS = ["1", "3", "5", "7"] as const;
 
 const FORMAT_OPTIONS: ReadonlyArray<{ value: StageFormat; label: string; description: string }> = [
   {
@@ -229,6 +235,33 @@ export function StageFormCard({
             </div>
           </div>
         ) : null}
+
+        <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-muted/20 p-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              Series length
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Default for every match this stage generates. Hosts can override per-match
+              from the score dialog (e.g. bumping the grand final to bo7).
+            </p>
+          </div>
+          <Select
+            value={stage.bestOf}
+            onValueChange={(value) => onChange({ bestOf: value })}
+          >
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {BEST_OF_OPTIONS.map((n) => (
+                <SelectItem key={n} value={n}>
+                  Best of {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         <div className="space-y-3 rounded-md border border-border bg-muted/20 p-4">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">

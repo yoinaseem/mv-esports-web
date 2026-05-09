@@ -74,17 +74,25 @@ function isoNowPlusHours(hours: number): string {
 }
 
 function buildStageConfig(stage: StageDraft): StageConfig {
+  // Backend defaults to bo1 when the key is absent. Only emit when the host
+  // picked something else — keeps the payload minimal.
+  const parsedBestOf = Number(stage.bestOf);
+  const bestOf = Number.isFinite(parsedBestOf) && parsedBestOf > 1 ? parsedBestOf : undefined;
+  const withBestOf = <T extends Record<string, unknown>>(base: T): T =>
+    bestOf !== undefined ? ({ ...base, best_of: bestOf } as T) : base;
+
   if (stage.format === "single_elim") {
-    return stage.thirdPlaceMatch ? { third_place_match: true } : {};
+    const base = stage.thirdPlaceMatch ? { third_place_match: true } : {};
+    return withBestOf(base) as StageConfig;
   }
   if (stage.format === "double_elim") {
-    return { grand_final_reset: stage.grandFinalReset };
+    return withBestOf({ grand_final_reset: stage.grandFinalReset }) as StageConfig;
   }
   if (stage.format === "round_robin") {
-    return {
+    return withBestOf({
       groups: Number(stage.rrGroups) || 1,
       group_size: Number(stage.rrGroupSize) || 2,
-    };
+    }) as StageConfig;
   }
   return {};
 }
