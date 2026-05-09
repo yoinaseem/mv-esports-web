@@ -1,5 +1,27 @@
 import { apiRequest } from "@/lib/api-client";
-import type { Tournament, TournamentStatus } from "@/types/tournaments";
+import type {
+  ParticipantType,
+  RegistrationType,
+  Tournament,
+  TournamentStatus,
+} from "@/types/tournaments";
+
+export type TournamentCreatePayload = {
+  name: string;
+  slug: string;
+  game_id: number;
+  organization_id?: number | null;
+  participant_type: ParticipantType;
+  registration_type: RegistrationType;
+  description?: string | null;
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+  registration_opens_at: string; // ISO 8601
+  registration_closes_at: string; // ISO 8601
+  stream_url?: string | null;
+  banner_url?: string | null;
+  max_participants?: number | null;
+};
 
 export type ListTournamentsOptions = {
   status?: TournamentStatus;
@@ -24,6 +46,37 @@ export async function listTournaments(options: ListTournamentsOptions = {}): Pro
 
 export async function getTournament(id: number): Promise<Tournament> {
   const response = await apiRequest<{ data: Tournament }>(`/tournaments/${id}`);
+  return response.data;
+}
+
+// Host application path — caller's tournament_hosts row must be approved.
+// Lands at status `draft_pending_review`, awaiting manager approval.
+export async function createTournamentApplication(
+  payload: TournamentCreatePayload,
+): Promise<Tournament> {
+  const response = await apiRequest<{ data: Tournament }>("/tournaments/applications", {
+    method: "POST",
+    body: payload,
+  });
+  return response.data;
+}
+
+// Manager direct-create path — system_manager / superadmin only.
+// Lands at status `draft` (skips the review step).
+export async function createTournamentDraft(
+  payload: TournamentCreatePayload,
+): Promise<Tournament> {
+  const response = await apiRequest<{ data: Tournament }>("/tournaments/drafts", {
+    method: "POST",
+    body: payload,
+  });
+  return response.data;
+}
+
+export async function seedAndBuildTournament(id: number): Promise<Tournament> {
+  const response = await apiRequest<{ data: Tournament }>(`/tournaments/${id}/seed-and-build`, {
+    method: "POST",
+  });
   return response.data;
 }
 

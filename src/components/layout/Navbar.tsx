@@ -51,10 +51,11 @@ function getInitials(user: AuthUser): string {
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isAuthenticated, loading, logout, hasRole } = useAuth();
+  const { user, isAuthenticated, loading, logout, hasRole, hasPermission } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const isAdmin = ADMIN_ROLES.some((role) => hasRole(role));
+  const canHostTournaments = hasPermission("tournaments.create");
 
   const handleLogout = async () => {
     await logout();
@@ -129,13 +130,16 @@ export default function Navbar() {
                     </div>
                   </DropdownMenuLabel>
 
+                  {canHostTournaments || isAdmin ? <DropdownMenuSeparator /> : null}
+                  {canHostTournaments ? (
+                    <DropdownMenuItem onSelect={() => router.push("/host/tournaments/new")}>
+                      Create tournament
+                    </DropdownMenuItem>
+                  ) : null}
                   {isAdmin ? (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => router.push("/admin")}>
-                        Admin panel
-                      </DropdownMenuItem>
-                    </>
+                    <DropdownMenuItem onSelect={() => router.push("/admin")}>
+                      Admin panel
+                    </DropdownMenuItem>
                   ) : null}
 
                   <DropdownMenuSeparator />
@@ -214,6 +218,16 @@ export default function Navbar() {
                   </div>
                 </div>
                 <div className="flex flex-col gap-1">
+                  {canHostTournaments ? (
+                    <SheetClose asChild>
+                      <Link
+                        href="/host/tournaments/new"
+                        className="rounded-md px-3 py-2 text-sm hover:bg-muted"
+                      >
+                        Create tournament
+                      </Link>
+                    </SheetClose>
+                  ) : null}
                   {isAdmin ? (
                     <SheetClose asChild>
                       <Link
