@@ -32,7 +32,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -46,6 +45,9 @@ type MatchScoreDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   match: TournamentMatch | null;
+  // Whether the parent stage's config has allow_draws=true. Set by the host
+  // builder by looking up the match's stage. RR-only — SE/DE always pass false.
+  allowDraws?: boolean;
   // Fired after any successful create / delete so the parent can refetch
   // matches — backend's MatchGameObserver may have auto-completed the match
   // and propagated the winner through advancement, so the whole bracket can
@@ -53,19 +55,23 @@ type MatchScoreDialogProps = {
   onMatchUpdated: () => void;
 };
 
-type Side = "a" | "b";
-
 function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-export function MatchScoreDialog({ open, onOpenChange, match, onMatchUpdated }: MatchScoreDialogProps) {
+export function MatchScoreDialog({
+  open,
+  onOpenChange,
+  match,
+  allowDraws = false,
+  onMatchUpdated,
+}: MatchScoreDialogProps) {
   const [games, setGames] = useState<MatchGame[]>([]);
   const [loadError, setLoadError] = useState("");
   const [loading, startLoadTransition] = useTransition();
 
-  // Add-game form state
-  const [winnerSide, setWinnerSide] = useState<Side>("a");
+  // Add-game form state. Winner is derived from scores at submit time —
+  // no manual picker needed. Higher score wins.
   const [scoreA, setScoreA] = useState("");
   const [scoreB, setScoreB] = useState("");
   const [mapOrMode, setMapOrMode] = useState("");
@@ -91,7 +97,6 @@ export function MatchScoreDialog({ open, onOpenChange, match, onMatchUpdated }: 
       }
     });
     // Reset form whenever the dialog re-opens.
-    setWinnerSide("a");
     setScoreA("");
     setScoreB("");
     setMapOrMode("");
@@ -100,7 +105,12 @@ export function MatchScoreDialog({ open, onOpenChange, match, onMatchUpdated }: 
     return () => {
       cancelled = true;
     };
-  }, [open, match]);
+    // Key on match.id, not the match object itself — the parent re-derives
+    // the match from refreshed state on every refetch (so canEdit flips when
+    // the observer auto-completes), and we don't want that reference change
+    // to wipe + reload the games list mid-session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, match?.id]);
 
   if (!match) return null;
 
@@ -147,6 +157,7 @@ export function MatchScoreDialog({ open, onOpenChange, match, onMatchUpdated }: 
   };
 
   const winnerLabel = (game: MatchGame): string => {
+    if (game.winner_participant_id == null) return "Draw";
     if (game.winner_participant_id === match.participant_a_id &&
         game.winner_participant_type === match.participant_a_type) return aName;
     if (game.winner_participant_id === match.participant_b_id &&
@@ -164,13 +175,32 @@ export function MatchScoreDialog({ open, onOpenChange, match, onMatchUpdated }: 
       return;
     }
 
-    const winnerType =
-      winnerSide === "a" ? match.participant_a_type : match.participant_b_type;
-    const winnerId =
-      winnerSide === "a" ? match.participant_a_id : match.participant_b_id;
-    if (!winnerType || winnerId == null) {
-      setFormError("Pick a winner before submitting.");
+    if (scoreA.trim() === "" || scoreB.trim() === "") {
+      setFormError("Enter a score for both sides.");
       return;
+    }
+    const numA = Number(scoreA);
+    const numB = Number(scoreB);
+    if (!Number.isFinite(numA) || !Number.isFinite(numB)) {
+      setFormError("Scores must be numbers.");
+      return;
+    }
+    const isDraw = numA === numB;
+    if (isDraw && !allowDraws) {
+      setFormError("Scores can't be equal — there's no winner.");
+      return;
+    }
+
+    let winnerType: MorphAlias | null = null;
+    let winnerId: number | null = null;
+    if (!isDraw) {
+      const winnerIsA = numA > numB;
+      winnerType = (winnerIsA ? match.participant_a_type : match.participant_b_type) as MorphAlias | null;
+      winnerId = winnerIsA ? match.participant_a_id : match.participant_b_id;
+      if (!winnerType || winnerId == null) {
+        setFormError("Couldn't resolve winner from match participants.");
+        return;
+      }
     }
 
     const nextGameNumber = (games[games.length - 1]?.game_number ?? 0) + 1;
@@ -179,7 +209,7 @@ export function MatchScoreDialog({ open, onOpenChange, match, onMatchUpdated }: 
       try {
         const created = await createMatchGame(match.id, {
           game_number: nextGameNumber,
-          winner_participant_type: winnerType as MorphAlias,
+          winner_participant_type: winnerType,
           winner_participant_id: winnerId,
           score_a: scoreA.trim() === "" ? null : Number(scoreA),
           score_b: scoreB.trim() === "" ? null : Number(scoreB),
@@ -189,7 +219,7 @@ export function MatchScoreDialog({ open, onOpenChange, match, onMatchUpdated }: 
         setScoreA("");
         setScoreB("");
         setMapOrMode("");
-        toast.success(`Recorded game ${nextGameNumber}`);
+        toast.success(isDraw ? `Recorded game ${nextGameNumber} as a draw` : `Recorded game ${nextGameNumber}`);
         // Backend may have auto-completed the match — let the parent refetch.
         onMatchUpdated();
       } catch (error) {
@@ -355,28 +385,6 @@ export function MatchScoreDialog({ open, onOpenChange, match, onMatchUpdated }: 
               Add game {(games[games.length - 1]?.game_number ?? 0) + 1}
             </p>
 
-            <div className="space-y-2">
-              <Label>Winner</Label>
-              <RadioGroup
-                value={winnerSide}
-                onValueChange={(v) => setWinnerSide(v as Side)}
-                className="grid grid-cols-2 gap-3"
-              >
-                {[{ side: "a" as const, label: aName }, { side: "b" as const, label: bName }].map((opt) => (
-                  <Label
-                    key={opt.side}
-                    htmlFor={`winner-${opt.side}`}
-                    className="flex cursor-pointer items-center gap-2 rounded-md border border-border p-3 has-[input:checked]:border-primary has-[input:checked]:bg-primary/10"
-                  >
-                    <RadioGroupItem id={`winner-${opt.side}`} value={opt.side} />
-                    <span className="text-sm font-medium">{opt.label}</span>
-                  </Label>
-                ))}
-              </RadioGroup>
-              {renderFieldErrors("winner_participant_id")}
-              {renderFieldErrors("winner_participant_type")}
-            </div>
-
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="score-a">{aName} score</Label>
@@ -384,6 +392,7 @@ export function MatchScoreDialog({ open, onOpenChange, match, onMatchUpdated }: 
                   id="score-a"
                   type="number"
                   min={0}
+                  required
                   placeholder="0"
                   value={scoreA}
                   onChange={(e) => setScoreA(e.target.value)}
@@ -397,6 +406,7 @@ export function MatchScoreDialog({ open, onOpenChange, match, onMatchUpdated }: 
                   id="score-b"
                   type="number"
                   min={0}
+                  required
                   placeholder="0"
                   value={scoreB}
                   onChange={(e) => setScoreB(e.target.value)}
@@ -405,6 +415,43 @@ export function MatchScoreDialog({ open, onOpenChange, match, onMatchUpdated }: 
                 {renderFieldErrors("score_b")}
               </div>
             </div>
+
+            {/* Winner derived from scores. Surface it as a caption so the
+                host can sanity-check before submit; equal scores show the
+                error state below. */}
+            {(() => {
+              const numA = Number(scoreA);
+              const numB = Number(scoreB);
+              const aHasScore = scoreA.trim() !== "" && Number.isFinite(numA);
+              const bHasScore = scoreB.trim() !== "" && Number.isFinite(numB);
+              if (!aHasScore || !bHasScore) {
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    Winner is derived from scores. Higher score wins.
+                  </p>
+                );
+              }
+              if (numA === numB) {
+                if (allowDraws) {
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      Draw — both sides will be credited 1 point in standings.
+                    </p>
+                  );
+                }
+                return (
+                  <p className="text-xs text-destructive">
+                    Scores are tied — adjust one side to declare a winner.
+                  </p>
+                );
+              }
+              const winnerName = numA > numB ? aName : bName;
+              return (
+                <p className="text-xs text-muted-foreground">
+                  Winner: <span className="font-medium text-primary">{winnerName}</span>
+                </p>
+              );
+            })()}
 
             <div className="space-y-2">
               <Label htmlFor="map">Map / mode <span className="text-muted-foreground">(optional)</span></Label>

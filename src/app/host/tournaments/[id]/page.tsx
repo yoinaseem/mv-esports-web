@@ -1,12 +1,13 @@
 "use client";
 
-import { use, useEffect, useState, useTransition } from "react";
+import { use, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   CheckmarkCircle02Icon,
   ChampionIcon,
+  Edit01Icon,
   PauseCircleIcon,
   PlayCircleIcon,
   StopCircleIcon,
@@ -16,17 +17,18 @@ import { ApiError } from "@/lib/api-client";
 import { listGames } from "@/lib/api/games";
 import { listMatches } from "@/lib/api/matches";
 import { listRegistrations } from "@/lib/api/registrations";
+import { getSeedAndBuildPreview } from "@/lib/api/seed-and-build";
 import { listStages } from "@/lib/api/stages";
 import {
   closeTournamentRegistration,
   getTournament,
   openTournamentRegistration,
-  seedAndBuildTournament,
 } from "@/lib/api/tournaments";
 import type { Game } from "@/types/games";
 import type { TournamentMatch } from "@/types/matches";
 import type { TournamentRegistration } from "@/types/registrations";
-import type { Stage } from "@/types/stages";
+import type { SeedAndBuildPreview as SeedAndBuildPreviewPayload } from "@/types/seed-preview";
+import { formatLabel, type RoundRobinConfig, type Stage } from "@/types/stages";
 import {
   isTerminal,
   type Tournament,
@@ -39,6 +41,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CancelTournamentDialog } from "@/components/tournaments/CancelTournamentDialog";
 import { MatchScoreDialog } from "@/components/tournaments/builder/MatchScoreDialog";
 import { RegistrationsSection } from "@/components/tournaments/builder/RegistrationsSection";
+import { ScheduleSection } from "@/components/tournaments/builder/ScheduleSection";
+import { SeedAndBuildConfirmDialog } from "@/components/tournaments/builder/SeedAndBuildConfirmDialog";
+import { StageEditDialog } from "@/components/tournaments/builder/StageEditDialog";
 import { StageView } from "@/components/tournaments/bracket/StageView";
 
 const STATUS_LABELS: Record<TournamentStatus, string> = {
@@ -49,13 +54,6 @@ const STATUS_LABELS: Record<TournamentStatus, string> = {
   in_progress: "In progress",
   completed: "Completed",
   cancelled: "Cancelled",
-};
-
-const FORMAT_LABELS: Record<string, string> = {
-  single_elim: "Single elimination",
-  double_elim: "Double elimination",
-  round_robin: "Round robin",
-  swiss: "Swiss",
 };
 
 function statusBadgeVariant(status: TournamentStatus): "default" | "secondary" | "outline" | "destructive" {
@@ -109,7 +107,45 @@ export default function HostTournamentBuilderPage({
   const [actionPending, startActionTransition] = useTransition();
   const [cancelOpen, setCancelOpen] = useState(false);
 
-  const [scoringMatch, setScoringMatch] = useState<TournamentMatch | null>(null);
+  // Seed-and-build preview: fetched on entering RegistrationClosed and again
+  // whenever a bulk-seed PATCH succeeds. Cached at this level so the live
+  // panel in RegistrationsSection and the seed-and-build confirmation dialog
+  // share the same payload. Null until first fetch completes; setting to
+  // null on stale (e.g. status leaves RegistrationClosed) triggers refetch.
+  const [preview, setPreview] = useState<SeedAndBuildPreviewPayload | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [confirmBuildOpen, setConfirmBuildOpen] = useState(false);
+
+  // Hold the open-match by id rather than a full snapshot — when
+  // matchesByStageId refetches (e.g. after the MatchGameObserver
+  // auto-completes the match), this id reads the live row and the dialog
+  // re-renders with the updated status (so canEdit flips false and the
+  // add-game form hides).
+  const [editingStageId, setEditingStageId] = useState<number | null>(null);
+  const editingStage = useMemo<Stage | null>(() => {
+    if (editingStageId == null) return null;
+    return stages.find((s) => s.id === editingStageId) ?? null;
+  }, [editingStageId, stages]);
+
+  const [scoringMatchId, setScoringMatchId] = useState<number | null>(null);
+  const scoringMatch = useMemo<TournamentMatch | null>(() => {
+    if (scoringMatchId == null) return null;
+    for (const list of Object.values(matchesByStageId)) {
+      const found = list.find((m) => m.id === scoringMatchId);
+      if (found) return found;
+    }
+    return null;
+  }, [scoringMatchId, matchesByStageId]);
+
+  // Resolve the open match's parent stage so we can read allow_draws and
+  // pass it down. Only RR stages set the flag; SE/DE always evaluate to false.
+  const scoringStageAllowsDraws = useMemo<boolean>(() => {
+    if (!scoringMatch) return false;
+    const stage = stages.find((s) => s.id === scoringMatch.stage_id);
+    if (!stage || stage.format !== "round_robin") return false;
+    return (stage.config as RoundRobinConfig)?.allow_draws === true;
+  }, [scoringMatch, stages]);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,6 +196,39 @@ export default function HostTournamentBuilderPage({
   }, [tournamentId, refetchKey]);
 
   const refetch = () => setRefetchKey((k) => k + 1);
+
+  // Preview fetch — gated on RegistrationClosed. Backend rejects in other
+  // statuses with a 422, so don't even try.
+  const refreshPreview = useCallback(async () => {
+    if (tournament?.status !== "registration_closed") return;
+    setPreviewLoading(true);
+    setPreviewError("");
+    try {
+      const next = await getSeedAndBuildPreview(tournament.id);
+      setPreview(next);
+    } catch (error) {
+      const message =
+        error instanceof ApiError && error.message
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Couldn't load preview.";
+      setPreviewError(message);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [tournament?.id, tournament?.status]);
+
+  // Auto-fetch on entering RegistrationClosed. Clear cached preview when
+  // status leaves that window so we don't show stale data later.
+  useEffect(() => {
+    if (tournament?.status === "registration_closed") {
+      void refreshPreview();
+    } else {
+      setPreview(null);
+      setPreviewError("");
+    }
+  }, [tournament?.status, refreshPreview]);
 
   const runAction = (
     fn: (id: number) => Promise<Tournament>,
@@ -215,6 +284,7 @@ export default function HostTournamentBuilderPage({
   const canCloseRegistration = status === "registration_open";
   const canSeedAndBuild = status === "registration_closed";
   const canCancel = !isTerminal(status);
+  const approvedRegistrationCount = registrations.filter((r) => r.status === "approved").length;
 
   return (
     <section className="mx-auto w-full max-w-5xl space-y-8 px-6 py-12">
@@ -271,41 +341,39 @@ export default function HostTournamentBuilderPage({
         <CardHeader>
           <CardTitle>Schedule</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">Tournament window</p>
-            <p className="text-sm">
-              {formatDate(tournament.start_date)} – {formatDate(tournament.end_date)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">Registration window</p>
-            <p className="text-sm">
-              {formatDateTime(tournament.registration_opens_at)} → {formatDateTime(tournament.registration_closes_at)}
-            </p>
-          </div>
-          {tournament.max_participants ? (
+        <CardContent className="space-y-4">
+          <ScheduleSection
+            tournament={tournament}
+            onUpdated={setTournament}
+            // Lock once the tournament has reached a terminal state. Mid-life
+            // edits (e.g. extending registration during registration_open) are
+            // intentionally allowed — backend enforces window rules on POST.
+            editable={!isTerminal(status)}
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            {tournament.max_participants ? (
+              <div>
+                <p className="text-xs uppercase tracking-widest text-muted-foreground">Max participants</p>
+                <p className="text-sm">{tournament.max_participants}</p>
+              </div>
+            ) : null}
             <div>
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">Max participants</p>
-              <p className="text-sm">{tournament.max_participants}</p>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">Registration type</p>
+              <p className="text-sm capitalize">{tournament.registration_type.replace("_", " ")}</p>
             </div>
-          ) : null}
-          <div>
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">Registration type</p>
-            <p className="text-sm capitalize">{tournament.registration_type.replace("_", " ")}</p>
+            {tournament.started_at ? (
+              <div>
+                <p className="text-xs uppercase tracking-widest text-muted-foreground">Started</p>
+                <p className="text-sm">{formatDateTime(tournament.started_at)}</p>
+              </div>
+            ) : null}
+            {tournament.completed_at ? (
+              <div>
+                <p className="text-xs uppercase tracking-widest text-muted-foreground">Completed</p>
+                <p className="text-sm">{formatDateTime(tournament.completed_at)}</p>
+              </div>
+            ) : null}
           </div>
-          {tournament.started_at ? (
-            <div>
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">Started</p>
-              <p className="text-sm">{formatDateTime(tournament.started_at)}</p>
-            </div>
-          ) : null}
-          {tournament.completed_at ? (
-            <div>
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">Completed</p>
-              <p className="text-sm">{formatDateTime(tournament.completed_at)}</p>
-            </div>
-          ) : null}
         </CardContent>
       </Card>
 
@@ -338,12 +406,30 @@ export default function HostTournamentBuilderPage({
                 <div>
                   <p className="text-sm font-medium">{stage.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {FORMAT_LABELS[stage.format] ?? stage.format} · sort {stage.sort_order}
+                    {formatLabel(stage)} · sort {stage.sort_order}
                   </p>
                 </div>
-                <Badge variant={stage.status === "in_progress" ? "outline" : "secondary"}>
-                  {stage.status.replace("_", " ")}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant={stage.status === "in_progress" ? "outline" : "secondary"}>
+                    {stage.status.replace("_", " ")}
+                  </Badge>
+                  {/* Edit pencil — only while the stage is still pending and the
+                      tournament hasn't progressed past registration_closed.
+                      Backend locks stage config once seed-and-build runs. */}
+                  {stage.status === "pending" &&
+                  (status === "draft" ||
+                    status === "registration_open" ||
+                    status === "registration_closed") ? (
+                    <button
+                      type="button"
+                      aria-label={`Edit ${stage.name}`}
+                      onClick={() => setEditingStageId(stage.id)}
+                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <HugeiconsIcon icon={Edit01Icon} strokeWidth={2} className="size-3.5" />
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ))
           )}
@@ -361,6 +447,7 @@ export default function HostTournamentBuilderPage({
           <CardContent>
             <RegistrationsSection
               tournamentId={tournament.id}
+              tournamentStatus={status}
               registrations={registrations}
               onChange={setRegistrations}
               defaultTab={
@@ -374,6 +461,10 @@ export default function HostTournamentBuilderPage({
               // or the tournament has reached a terminal state — editing past
               // those points either desyncs the bracket or has no meaning.
               locked={status === "in_progress" || isTerminal(status)}
+              preview={preview}
+              previewLoading={previewLoading}
+              previewError={previewError}
+              onSeedsApplied={refreshPreview}
             />
           </CardContent>
         </Card>
@@ -390,7 +481,10 @@ export default function HostTournamentBuilderPage({
             </p>
           ) : status === "registration_closed" ? (
             <p className="text-sm text-muted-foreground">
-              Registrations are closed. Hit <span className="font-medium text-foreground">Seed &amp; build</span> below to generate the bracket.
+              Registrations are closed. Review the predicted bracket in the Registrations card
+              above, then hit{" "}
+              <span className="font-medium text-foreground">Seed &amp; build</span> below to
+              generate it.
             </p>
           ) : status === "draft" ||
             status === "draft_pending_review" ||
@@ -414,7 +508,7 @@ export default function HostTournamentBuilderPage({
                   <StageView
                     stage={stage}
                     matches={stageMatches}
-                    onMatchClick={(m) => setScoringMatch(m)}
+                    onMatchClick={(m) => setScoringMatchId(m.id)}
                   />
                 </div>
               );
@@ -430,13 +524,26 @@ export default function HostTournamentBuilderPage({
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
             {canOpenRegistration ? (
-              <Button
-                onClick={() => runAction(openTournamentRegistration, "Registration opened")}
-                disabled={actionPending}
-              >
-                <HugeiconsIcon icon={PlayCircleIcon} strokeWidth={2} />
-                Open registration
-              </Button>
+              <>
+                {/* Backend enforces strict cap === max while in Draft and locks
+                    the rule in one last time at open-registration; afterwards
+                    the two decouple and only the approved-count guard remains.
+                    Surface that as a small note so the host understands the
+                    consequence of clicking before they click. */}
+                <p className="w-full text-xs text-muted-foreground">
+                  Opening registration locks the entry stage&apos;s capacity to match max
+                  participants one last time. After this, you can adjust capacity and max
+                  participants independently — only the approved-registration count constrains
+                  shrinking.
+                </p>
+                <Button
+                  onClick={() => runAction(openTournamentRegistration, "Registration opened")}
+                  disabled={actionPending}
+                >
+                  <HugeiconsIcon icon={PlayCircleIcon} strokeWidth={2} />
+                  Open registration
+                </Button>
+              </>
             ) : null}
             {canCloseRegistration ? (
               <Button
@@ -450,13 +557,12 @@ export default function HostTournamentBuilderPage({
             ) : null}
             {canSeedAndBuild ? (
               <Button
-                onClick={() =>
-                  runAction(
-                    seedAndBuildTournament,
-                    "Bracket built — tournament is now in progress",
-                    { refetchAfter: true },
-                  )
-                }
+                onClick={() => {
+                  // Always refetch preview when opening — the cached one might
+                  // be stale if approvals shifted since the section first loaded.
+                  void refreshPreview();
+                  setConfirmBuildOpen(true);
+                }}
                 disabled={actionPending}
               >
                 <HugeiconsIcon icon={CheckmarkCircle02Icon} strokeWidth={2} />
@@ -483,17 +589,47 @@ export default function HostTournamentBuilderPage({
         tournament={tournament}
         onCancelled={handleCancelled}
       />
+      <StageEditDialog
+        open={editingStage !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingStageId(null);
+        }}
+        tournament={tournament}
+        stage={editingStage}
+        approvedRegistrationCount={approvedRegistrationCount}
+        onUpdated={(updated) => {
+          setStages((prev) =>
+            prev.map((s) => (s.id === updated.id ? updated : s)).sort((a, b) => a.sort_order - b.sort_order),
+          );
+        }}
+      />
       <MatchScoreDialog
         open={scoringMatch !== null}
         onOpenChange={(open) => {
-          if (!open) setScoringMatch(null);
+          if (!open) setScoringMatchId(null);
         }}
         match={scoringMatch}
+        allowDraws={scoringStageAllowsDraws}
         // Backend's MatchGameObserver auto-completes the match when the
         // best-of threshold is hit and propagates the winner through
         // advancement. Refetch matches so the bracket reflects new scores
-        // / winners / cascaded slot fills.
+        // / winners / cascaded slot fills, and so the open dialog picks up
+        // the live match status (canEdit flips false, form hides).
         onMatchUpdated={refetch}
+      />
+      <SeedAndBuildConfirmDialog
+        open={confirmBuildOpen}
+        onOpenChange={setConfirmBuildOpen}
+        tournamentId={tournament.id}
+        preview={preview}
+        loadError={previewError}
+        onBuilt={(updated) => {
+          // Mirror the previous runAction({ refetchAfter: true }) side-effect —
+          // seed-and-build creates matches + stage participants the page
+          // depends on, and the tournament moves to InProgress.
+          setTournament(updated);
+          refetch();
+        }}
       />
     </section>
   );

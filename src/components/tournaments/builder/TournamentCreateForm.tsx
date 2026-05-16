@@ -89,10 +89,16 @@ function buildStageConfig(stage: StageDraft): StageConfig {
     return withBestOf({ grand_final_reset: stage.grandFinalReset }) as StageConfig;
   }
   if (stage.format === "round_robin") {
-    return withBestOf({
+    const base: Record<string, unknown> = {
       groups: Number(stage.rrGroups) || 1,
       group_size: Number(stage.rrGroupSize) || 2,
-    }) as StageConfig;
+    };
+    if (stage.rrAllowDraws) base.allow_draws = true;
+    // Backend defaults to legs=1 (single round-robin). Only emit when > 1 so
+    // the payload stays minimal and matches the convention used for best_of.
+    const parsedLegs = Number(stage.rrLegs);
+    if (Number.isFinite(parsedLegs) && parsedLegs > 1) base.legs = parsedLegs;
+    return withBestOf(base) as StageConfig;
   }
   return {};
 }
@@ -219,6 +225,38 @@ export function TournamentCreateForm() {
     if (!gameId) {
       setFieldErrors({ game_id: ["Pick a game."] });
       return;
+    }
+
+    // Frontend cross-validation that mirrors the backend's Draft-phase write-
+    // path rule: cap and max must be equal at design time. RR entry stages
+    // use groups × group_size; DE entry stages have no separate capacity, so
+    // max itself must be one of the supported bracket sizes. Both decouple
+    // (cap-vs-max only) once registration opens — but in the create form we
+    // are always in Draft, so the strict rule always applies here.
+    const maxParticipantsNum = maxParticipants ? Number(maxParticipants) : null;
+    if (maxParticipantsNum != null && maxParticipantsNum > 0) {
+      const firstStage = stages[0];
+      if (firstStage && firstStage.format === "round_robin") {
+        const groups = Math.max(1, Number(firstStage.rrGroups) || 0);
+        const groupSize = Math.max(0, Number(firstStage.rrGroupSize) || 0);
+        const capacity = groups * groupSize;
+        if (capacity !== maxParticipantsNum) {
+          setFormError(
+            `Stage 1's capacity (${capacity}) must equal the tournament cap of ${maxParticipantsNum} while in Draft. Adjust groups, group size, or max participants so they match.`,
+          );
+          return;
+        }
+      } else if (firstStage && firstStage.format === "double_elim") {
+        // DE has no separate capacity knob; max_participants itself must be
+        // one of the supported bracket sizes. Persists past Draft too.
+        const DE_VALID_SIZES: ReadonlySet<number> = new Set([4, 8, 16, 32]);
+        if (!DE_VALID_SIZES.has(maxParticipantsNum)) {
+          setFormError(
+            `Stage 1 is double-elimination, which requires max participants of 4, 8, 16, or 32. Currently ${maxParticipantsNum}. Change either max participants or the stage format.`,
+          );
+          return;
+        }
+      }
     }
 
     const tournamentPayload = {
@@ -575,6 +613,7 @@ export function TournamentCreateForm() {
             fieldErrors={stageErrors[index] ?? {}}
             onChange={(update) => updateStage(index, update)}
             onRemove={() => removeStage(index)}
+            tournamentMaxParticipants={maxParticipants ? Number(maxParticipants) : null}
           />
         ))}
 

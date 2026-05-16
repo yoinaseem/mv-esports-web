@@ -23,6 +23,13 @@ export type TournamentCreatePayload = {
   max_participants?: number | null;
 };
 
+// Sparse update — any subset of the create fields, plus the same windows
+// that the host might tweak post-create. Backend (UpdateTournamentRequest)
+// rejects status changes; those go through the verb endpoints.
+export type TournamentUpdatePayload = Partial<Omit<TournamentCreatePayload, "slug">> & {
+  slug?: string;
+};
+
 export type ListTournamentsOptions = {
   status?: TournamentStatus;
   gameId?: number;
@@ -46,6 +53,17 @@ export async function listTournaments(options: ListTournamentsOptions = {}): Pro
 
 export async function getTournament(id: number): Promise<Tournament> {
   const response = await apiRequest<{ data: Tournament }>(`/tournaments/${id}`);
+  return response.data;
+}
+
+export async function updateTournament(
+  id: number,
+  payload: TournamentUpdatePayload,
+): Promise<Tournament> {
+  const response = await apiRequest<{ data: Tournament }>(`/tournaments/${id}`, {
+    method: "PATCH",
+    body: payload,
+  });
   return response.data;
 }
 

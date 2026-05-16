@@ -28,6 +28,12 @@ export type StageDraft = {
   grandFinalReset: boolean;
   rrGroups: string;
   rrGroupSize: string;
+  // RR only. Drawn games count as 1 point in standings (wins are 3).
+  rrAllowDraws: boolean;
+  // RR only. Number of times each pair plays. 1 = single round-robin
+  // (current default), 2 = double round-robin, etc. Backend caps at 10
+  // and rejects the key for SE / DE / Swiss.
+  rrLegs: string;
   qualSourceIndex: number | null; // null = entry from registrations
   qualRuleType: QualificationRuleType;
   qualTopN: string;
@@ -49,6 +55,8 @@ export function newStageDraft(overrides: Partial<StageDraft> = {}): StageDraft {
     grandFinalReset: true,
     rrGroups: "1",
     rrGroupSize: "4",
+    rrAllowDraws: false,
+    rrLegs: "1",
     qualSourceIndex: null,
     qualRuleType: "all",
     qualTopN: "8",
@@ -94,6 +102,11 @@ type StageFormCardProps = {
   index: number;
   stage: StageDraft;
   previousStages: ReadonlyArray<StageDraft>;
+  // Tournament-level cap. When provided, RR stages cross-check capacity
+  // (groups × group_size) against it and warn if seats are below the cap —
+  // the entry stage MUST seat at least max_participants for seed-and-build
+  // to succeed (backend rule, mirrored here to fail fast).
+  tournamentMaxParticipants?: number | null;
   canRemove: boolean;
   fieldErrors: FieldErrors;
   onChange: (next: Partial<StageDraft>) => void;
@@ -108,12 +121,40 @@ export function StageFormCard({
   fieldErrors,
   onChange,
   onRemove,
+  tournamentMaxParticipants,
 }: StageFormCardProps) {
   const isFirst = index === 0;
   const sourceValue =
     stage.qualSourceIndex === null ? "registrations" : `stage-${stage.qualSourceIndex}`;
   const rulesForCurrentSource =
     stage.qualSourceIndex === null ? ENTRY_RULE_OPTIONS : STAGE_RULE_OPTIONS;
+
+  // RR-only capacity: groups × group_size = total bracket seats. Backend
+  // enforces strict equality (cap === max) at every Draft-phase write path
+  // — host commits to coherent numbers up front. After registration opens
+  // the two decouple; this card only ever renders in Draft (the host
+  // builder uses StageEditDialog for post-create edits).
+  const rrGroupsNum = Math.max(1, Number(stage.rrGroups) || 0);
+  const rrGroupSizeNum = Math.max(0, Number(stage.rrGroupSize) || 0);
+  const rrCapacity = rrGroupsNum * rrGroupSizeNum;
+  const showRrCapacityWarning =
+    isFirst &&
+    stage.format === "round_robin" &&
+    tournamentMaxParticipants != null &&
+    tournamentMaxParticipants > 0 &&
+    rrCapacity !== tournamentMaxParticipants;
+
+  // DE entry stage: max_participants must be one of 4 / 8 / 16 / 32 (DE only
+  // supports those sizes). Mirror the backend's check so the host gets fail-
+  // fast feedback instead of waiting for a 422 from stage / tournament /
+  // qualification write paths.
+  const DE_VALID_SIZES = [4, 8, 16, 32] as const;
+  const showDeSizeWarning =
+    isFirst &&
+    stage.format === "double_elim" &&
+    tournamentMaxParticipants != null &&
+    tournamentMaxParticipants > 0 &&
+    !(DE_VALID_SIZES as ReadonlyArray<number>).includes(tournamentMaxParticipants);
 
   const renderFieldErrors = (key: string) =>
     fieldErrors[key]?.map((message) => (
@@ -195,44 +236,105 @@ export function StageFormCard({
         ) : null}
 
         {stage.format === "double_elim" ? (
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id={`cfg-reset-${stage.id}`}
-              checked={stage.grandFinalReset}
-              onCheckedChange={(c) => onChange({ grandFinalReset: c === true })}
-            />
-            <Label htmlFor={`cfg-reset-${stage.id}`} className="cursor-pointer">
-              Grand final reset (losers must beat winners twice)
-            </Label>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id={`cfg-reset-${stage.id}`}
+                checked={stage.grandFinalReset}
+                onCheckedChange={(c) => onChange({ grandFinalReset: c === true })}
+              />
+              <Label htmlFor={`cfg-reset-${stage.id}`} className="cursor-pointer">
+                Grand final reset (losers must beat winners twice)
+              </Label>
+            </div>
+            {showDeSizeWarning ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                <span className="font-medium">Max participants must be 4, 8, 16, or 32</span> for
+                a double-elimination entry stage. Currently set to {tournamentMaxParticipants}.
+              </div>
+            ) : null}
           </div>
         ) : null}
 
         {stage.format === "round_robin" ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor={`cfg-groups-${stage.id}`}>Groups</Label>
-              <Input
-                id={`cfg-groups-${stage.id}`}
-                type="number"
-                min={1}
-                required
-                value={stage.rrGroups}
-                onChange={(e) => onChange({ rrGroups: e.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">1 = single round-robin without grouping.</p>
+          <div className="space-y-2">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor={`cfg-groups-${stage.id}`}>Groups</Label>
+                <Input
+                  id={`cfg-groups-${stage.id}`}
+                  type="number"
+                  min={1}
+                  required
+                  value={stage.rrGroups}
+                  onChange={(e) => onChange({ rrGroups: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">1 = single round-robin without grouping.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`cfg-size-${stage.id}`}>Group size</Label>
+                <Input
+                  id={`cfg-size-${stage.id}`}
+                  type="number"
+                  min={2}
+                  required
+                  value={stage.rrGroupSize}
+                  onChange={(e) => onChange({ rrGroupSize: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">Participants per group.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`cfg-legs-${stage.id}`}>Legs</Label>
+                <Input
+                  id={`cfg-legs-${stage.id}`}
+                  type="number"
+                  min={1}
+                  max={10}
+                  required
+                  value={stage.rrLegs}
+                  onChange={(e) => onChange({ rrLegs: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  How many times each pair plays. 1 = standard, 2 = double round-robin.
+                </p>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor={`cfg-size-${stage.id}`}>Group size</Label>
-              <Input
-                id={`cfg-size-${stage.id}`}
-                type="number"
-                min={2}
-                required
-                value={stage.rrGroupSize}
-                onChange={(e) => onChange({ rrGroupSize: e.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">Participants per group.</p>
+            <div
+              className={`rounded-md border px-3 py-2 text-xs ${
+                showRrCapacityWarning
+                  ? "border-destructive/40 bg-destructive/5 text-destructive"
+                  : "border-border bg-muted/20 text-muted-foreground"
+              }`}
+            >
+              <span className="font-medium">Capacity:</span> {rrCapacity} participant{rrCapacity === 1 ? "" : "s"}
+              {showRrCapacityWarning ? (
+                <>
+                  {" "}— must equal the tournament cap of {tournamentMaxParticipants} while in
+                  Draft. Adjust groups, group size, or max participants so they match. (They can
+                  diverge once registration opens.)
+                </>
+              ) : tournamentMaxParticipants != null && tournamentMaxParticipants > 0 ? (
+                <> — matches the tournament cap of {tournamentMaxParticipants}.</>
+              ) : null}
             </div>
+          </div>
+        ) : null}
+
+        {stage.format === "round_robin" ? (
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id={`cfg-draws-${stage.id}`}
+                checked={stage.rrAllowDraws}
+                onCheckedChange={(c) => onChange({ rrAllowDraws: c === true })}
+              />
+              <Label htmlFor={`cfg-draws-${stage.id}`} className="cursor-pointer">
+                Allow drawn games
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              When enabled, tied scores end the game without a winner. Standings score draws as 1 point (wins as 3).
+            </p>
           </div>
         ) : null}
 

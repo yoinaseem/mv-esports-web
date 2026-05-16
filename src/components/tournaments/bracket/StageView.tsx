@@ -2,6 +2,7 @@
 
 import type { TournamentMatch } from "@/types/matches";
 import type { Stage } from "@/types/stages";
+import { RoundRobinStandings } from "@/components/tournaments/bracket/RoundRobinStandings";
 import { SingleEliminationBracket } from "@/components/tournaments/bracket/SingleEliminationBracket";
 
 type StageViewProps = {
@@ -10,11 +11,15 @@ type StageViewProps = {
   onMatchClick?: (match: TournamentMatch) => void;
 };
 
-// Dispatcher: switches on stage.format to pick the right viewer. Single
-// elimination ships now; DE and RR are placeholders until their own commits.
+// Dispatcher: switches on stage.format to pick the right viewer. Single elim
+// and round-robin ship now; double elim placeholder until its own commit.
 export function StageView({ stage, matches, onMatchClick }: StageViewProps) {
   if (stage.format === "single_elim") {
     return <SingleEliminationBracket matches={matches} onMatchClick={onMatchClick} />;
+  }
+
+  if (stage.format === "round_robin") {
+    return <RoundRobinStandings stage={stage} matches={matches} onMatchClick={onMatchClick} />;
   }
 
   if (stage.format === "double_elim") {
@@ -22,16 +27,6 @@ export function StageView({ stage, matches, onMatchClick }: StageViewProps) {
       <div className="rounded-md border border-dashed border-border p-12 text-center">
         <p className="text-sm text-muted-foreground">
           Double-elimination bracket viewer coming in the next commit.
-        </p>
-      </div>
-    );
-  }
-
-  if (stage.format === "round_robin") {
-    return (
-      <div className="rounded-md border border-dashed border-border p-12 text-center">
-        <p className="text-sm text-muted-foreground">
-          Round-robin standings table coming in the next commit.
         </p>
       </div>
     );

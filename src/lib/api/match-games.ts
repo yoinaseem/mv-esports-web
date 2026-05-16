@@ -4,8 +4,10 @@ import type { Paginated } from "@/types/auth";
 
 export type MatchGamePayload = {
   game_number: number;
-  winner_participant_type: MorphAlias;
-  winner_participant_id: number;
+  // Nullable for drawn games on RR stages with allow_draws=true. Backend
+  // accepts both halves null together (= draw) or both set (= decisive).
+  winner_participant_type: MorphAlias | null;
+  winner_participant_id: number | null;
   score_a?: number | null;
   score_b?: number | null;
   map_or_mode?: string | null;

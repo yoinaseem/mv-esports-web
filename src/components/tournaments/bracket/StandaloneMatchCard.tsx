@@ -14,6 +14,10 @@ type Props = {
 // it's not on the final's chain) and any other one-off display.
 export function StandaloneMatchCard({ match, onClick }: Props) {
   const matchComplete = isMatchTerminal(match.status);
+  // A drawn match (RR with allow_draws) completes with no winner. Both sides
+  // stay neutral — the draw itself is surfaced via a pill on the divider.
+  // Cancelled matches also have no winner but read differently — exclude them.
+  const isDraw = matchComplete && match.winner_participant_id == null && match.status !== "cancelled";
 
   const aName = participantDisplayName(match.participant_a ?? null);
   const bName = participantDisplayName(match.participant_b ?? null);
@@ -30,8 +34,9 @@ export function StandaloneMatchCard({ match, onClick }: Props) {
     match.winner_participant_type === match.participant_b_type;
 
   const row = (won: boolean, name: string, score: number, present: boolean, isFirst: boolean) => {
-    const showWinnerStyling = matchComplete && won;
-    const showLoserStyling = matchComplete && !won;
+    // Draws keep both sides neutral — neither winner nor loser styling.
+    const showWinnerStyling = matchComplete && !isDraw && won;
+    const showLoserStyling = matchComplete && !isDraw && !won;
     let bg = "bg-card";
     let nameClass = "text-foreground";
     let scoreClass = "text-foreground";
@@ -69,7 +74,12 @@ export function StandaloneMatchCard({ match, onClick }: Props) {
         {row(winnerIsA, aName, match.score_a, aPresent, true)}
         {row(winnerIsB, bName, match.score_b, bPresent, false)}
       </div>
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2">
+        {isDraw ? (
+          <span className="rounded-md bg-muted px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-widest text-muted-foreground">
+            Draw
+          </span>
+        ) : null}
         <div className="pointer-events-auto">
           <MatchInfoPopover match={match} />
         </div>

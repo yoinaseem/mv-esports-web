@@ -3,6 +3,7 @@ import type {
   RegistrationStatus,
   TournamentRegistration,
 } from "@/types/registrations";
+import type { SeedAssignment } from "@/types/seed-preview";
 import type { Paginated } from "@/types/auth";
 
 export type RegistrationUpdatePayload = {
@@ -47,4 +48,19 @@ export async function deleteRegistration(
     `/tournaments/${tournamentId}/registrations/${registrationId}`,
     { method: "DELETE" },
   );
+}
+
+// Atomic full-set seed assignment. Backend requires every approved registration
+// to appear exactly once with seeds forming a contiguous 1..N sequence. Returns
+// the updated approved set ordered by seed. Available in RegistrationOpen and
+// RegistrationClosed; tournament-admin only.
+export async function bulkUpdateSeeds(
+  tournamentId: number,
+  assignments: ReadonlyArray<SeedAssignment>,
+): Promise<TournamentRegistration[]> {
+  const response = await apiRequest<{ data: TournamentRegistration[] }>(
+    `/tournaments/${tournamentId}/registrations/seeds`,
+    { method: "PATCH", body: { assignments } },
+  );
+  return response.data;
 }
