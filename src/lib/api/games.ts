@@ -1,11 +1,18 @@
 import { apiRequest } from "@/lib/api-client";
-import type { Game } from "@/types/games";
+import type { Game, GameGenre } from "@/types/games";
 
 export type GamePayload = {
   name: string;
   slug: string;
   icon_url?: string | null;
   is_active?: boolean;
+  // Commit 24 enrichment fields. All nullable on the backend so existing
+  // catalog entries stay valid. genre is one of the five GameGenre cases
+  // or null; the strings live on @/types/games next to GAME_GENRE_LABELS.
+  banner_url?: string | null;
+  description?: string | null;
+  genre?: GameGenre | null;
+  website_url?: string | null;
 };
 
 export type GameUpdatePayload = Partial<GamePayload>;

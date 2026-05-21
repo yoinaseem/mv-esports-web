@@ -21,6 +21,14 @@ export type TournamentCreatePayload = {
   stream_url?: string | null;
   banner_url?: string | null;
   max_participants?: number | null;
+  // Commit 24 enrichment fields. Freeform format hint (e.g. "3v3", "1v1",
+  // "BO5 finals"); tournament-level rather than game-level since e.g.
+  // Rocket League and FIFA vary per tournament. Prize pool is two coupled
+  // scalars on the write API (backend rule: both-or-neither on create;
+  // PATCH coupling relaxed so edits can send sparse payloads).
+  format_label?: string | null;
+  prize_pool_amount?: number | null;
+  prize_pool_currency?: string | null;
 };
 
 // Sparse update — any subset of the create fields, plus the same windows

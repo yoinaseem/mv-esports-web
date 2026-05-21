@@ -139,6 +139,19 @@ export function TournamentCreateForm() {
   const [streamUrl, setStreamUrl] = useState("");
   const [bannerUrl, setBannerUrl] = useState("");
 
+  // Commit 24 enrichment fields. format_label is freeform team-size hint
+  // ("3v3", "1v1", etc.). prize_pool is two coupled scalars with strict
+  // both-or-neither on create (backend rule); blank means no prize pool
+  // is advertised.
+  const [formatLabel, setFormatLabel] = useState("");
+  const [prizeAmount, setPrizeAmount] = useState("");
+  const [prizeCurrency, setPrizeCurrency] = useState<"MVR" | "USD">("MVR");
+
+  const clearPrizePool = () => {
+    setPrizeAmount("");
+    setPrizeCurrency("MVR");
+  };
+
   // Stages — at least one, multiple allowed
   const [stages, setStages] = useState<StageDraft[]>(() => [
     newStageDraft({ name: "Main" }),
@@ -259,6 +272,20 @@ export function TournamentCreateForm() {
       }
     }
 
+    // Mirror backend's required_with rule on the create path: prize pool is
+    // both-or-neither at design time. Amount empty + currency picked, or vice
+    // versa, fails before POST. PATCH path (post-create) relaxes this, but
+    // create is strict.
+    const trimmedAmount = prizeAmount.trim();
+    const hasAmount = trimmedAmount !== "";
+    const hasCurrency = prizeCurrency.trim() !== "";
+    if (hasAmount !== hasCurrency) {
+      setFormError(
+        "Prize pool needs both an amount and a currency, or neither. Use the Clear button if you don't want a prize pool.",
+      );
+      return;
+    }
+
     const tournamentPayload = {
       name: name.trim(),
       slug: slug.trim(),
@@ -273,6 +300,9 @@ export function TournamentCreateForm() {
       stream_url: streamUrl.trim() || null,
       banner_url: bannerUrl.trim() || null,
       max_participants: maxParticipants ? Number(maxParticipants) : null,
+      format_label: formatLabel.trim() || null,
+      prize_pool_amount: hasAmount ? Number(trimmedAmount) : null,
+      prize_pool_currency: hasAmount ? prizeCurrency : null,
     };
 
     startSubmitting(async () => {
@@ -434,6 +464,25 @@ export function TournamentCreateForm() {
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="t-format-label">
+              Format label <span className="text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
+              id="t-format-label"
+              maxLength={30}
+              placeholder="3v3"
+              aria-invalid={fieldErrors.format_label?.length ? true : undefined}
+              value={formatLabel}
+              onChange={(e) => setFormatLabel(e.target.value)}
+            />
+            {renderFieldErrors("format_label")}
+            <p className="text-xs text-muted-foreground">
+              Freeform team-size hint — &ldquo;3v3&rdquo;, &ldquo;5v5&rdquo;, &ldquo;1v1&rdquo;, &ldquo;BO5 finals&rdquo;.
+              Surfaced on the public tournament page.
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <Label>Participants</Label>
             <RadioGroup
               value={participantType}
@@ -560,10 +609,58 @@ export function TournamentCreateForm() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Links</CardTitle>
-          <CardDescription>Optional. Stream and banner can be added or changed later.</CardDescription>
+          <CardTitle>Links &amp; prize</CardTitle>
+          <CardDescription>Optional. All editable after create — set what you have now.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <Label>Prize pool <span className="text-muted-foreground">(optional)</span></Label>
+              {(prizeAmount.trim() !== "" || prizeCurrency !== "MVR") ? (
+                <button
+                  type="button"
+                  onClick={clearPrizePool}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  Clear prize pool
+                </button>
+              ) : null}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+              <Input
+                id="t-prize-amount"
+                type="number"
+                min={0}
+                step={1}
+                placeholder="0"
+                aria-invalid={fieldErrors.prize_pool_amount?.length ? true : undefined}
+                value={prizeAmount}
+                onChange={(e) => setPrizeAmount(e.target.value)}
+              />
+              <RadioGroup
+                value={prizeCurrency}
+                onValueChange={(v) => setPrizeCurrency(v as "MVR" | "USD")}
+                className="flex gap-2"
+              >
+                {(["MVR", "USD"] as const).map((code) => (
+                  <Label
+                    key={code}
+                    htmlFor={`t-prize-currency-${code}`}
+                    className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 hover:bg-muted/40 has-[input:checked]:border-primary has-[input:checked]:bg-primary/10"
+                  >
+                    <RadioGroupItem id={`t-prize-currency-${code}`} value={code} />
+                    <span className="text-sm font-medium">{code}</span>
+                  </Label>
+                ))}
+              </RadioGroup>
+            </div>
+            {renderFieldErrors("prize_pool_amount")}
+            {renderFieldErrors("prize_pool_currency")}
+            <p className="text-xs text-muted-foreground">
+              Whole units only. Leave blank for no advertised prize.
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="t-stream">Stream URL</Label>
             <Input
