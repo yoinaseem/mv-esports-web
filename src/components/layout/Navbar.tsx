@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { motion, useMotionValueEvent, useScroll } from "motion/react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Menu01Icon } from "@hugeicons/core-free-icons";
 
@@ -10,6 +11,7 @@ import { useAuth } from "@/context/auth-context";
 import type { AuthUser } from "@/types/auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { SlantedButton } from "@/components/site/SlantedButton";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,10 +28,15 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 
 // Public-site nav. Add entries as pages land. Linking ahead of pages 404s and is
 // noisier than just leaving them out — populate this list when targets exist.
-const navLinks: ReadonlyArray<{ href: string; label: string }> = [];
+const navLinks: ReadonlyArray<{ href: string; label: string }> = [
+  { href: "/tournaments", label: "Tournaments" },
+  { href: "/games", label: "Games" },
+  { href: "/about", label: "About" },
+];
 
 const ADMIN_ROLES = ["system_manager", "superadmin"] as const;
 
@@ -48,11 +55,45 @@ function getInitials(user: AuthUser): string {
   return initials || user.email[0]?.toUpperCase() || "?";
 }
 
+function Wordmark({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "font-display inline-flex items-baseline gap-1 text-xl font-bold uppercase tracking-[0.18em] leading-none",
+        className,
+      )}
+    >
+      <span className="text-primary">MV</span>
+      <span>Esports</span>
+    </span>
+  );
+}
+
+const ALWAYS_VISIBLE_THRESHOLD = 80;
+
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, isAuthenticated, loading, logout, hasRole, hasPermission } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [hidden, setHidden] = useState(false);
+
+  const { scrollY } = useScroll();
+  useMotionValueEvent(scrollY, "change", (latest) => {
+    const previous = scrollY.getPrevious() ?? 0;
+    // Near the top, always show.
+    if (latest < ALWAYS_VISIBLE_THRESHOLD) {
+      if (hidden) setHidden(false);
+      return;
+    }
+    // Don't auto-hide while the mobile sheet is open — would yank the trigger
+    // out from under the user.
+    if (mobileOpen) return;
+    // Scrolling down → hide. Scrolling up → show. Skip micro-scrolls.
+    const delta = latest - previous;
+    if (delta > 4) setHidden(true);
+    else if (delta < -4) setHidden(false);
+  });
 
   const isAdmin = ADMIN_ROLES.some((role) => hasRole(role));
   const canHostTournaments = hasPermission("tournaments.create");
@@ -63,31 +104,33 @@ export default function Navbar() {
   };
 
   return (
-    <header className="sticky top-0 z-30 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <motion.header
+      variants={{ visible: { y: 0 }, hidden: { y: "-100%" } }}
+      animate={hidden ? "hidden" : "visible"}
+      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+      className="sticky top-0 z-30 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+    >
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-4 px-4 sm:px-6 lg:gap-8">
-          <Link
-            href="/"
-            aria-label="MV Esports home"
-            className="font-heading inline-flex items-baseline gap-1 text-lg font-semibold uppercase tracking-[0.2em]"
-          >
-            <span className="text-primary">MV</span>
-            <span>Esports</span>
+        <div className="mx-auto flex h-20 w-full max-w-7xl items-center gap-6 px-4 sm:px-6 lg:gap-10">
+          <Link href="/" aria-label="MV Esports home">
+            <Wordmark />
           </Link>
 
           {navLinks.length > 0 ? (
-            <nav className="hidden items-center gap-6 lg:flex" aria-label="Primary">
+            <nav className="hidden items-center gap-7 lg:flex" aria-label="Primary">
               {navLinks.map(({ href, label }) => {
-                const active = pathname === href || pathname.startsWith(`${href}/`);
+                const active =
+                  pathname === href || pathname.startsWith(`${href}/`);
                 return (
                   <Link
                     key={href}
                     href={href}
-                    className={
+                    className={cn(
+                      "font-display text-sm font-semibold uppercase tracking-wider transition-colors",
                       active
-                        ? "text-sm font-medium text-foreground"
-                        : "text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-                    }
+                        ? "text-primary"
+                        : "text-muted-foreground hover:text-primary",
+                    )}
                   >
                     {label}
                   </Link>
@@ -96,9 +139,9 @@ export default function Navbar() {
             </nav>
           ) : null}
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-3">
             {loading ? (
-              <div aria-hidden className="size-8" />
+              <div aria-hidden className="size-9" />
             ) : isAuthenticated && user ? (
               <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
@@ -149,13 +192,13 @@ export default function Navbar() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <div className="hidden items-center gap-2 sm:flex">
-                <Button asChild variant="ghost" size="sm">
-                  <Link href="/login">Sign in</Link>
-                </Button>
-                <Button asChild size="sm">
-                  <Link href="/register">Create account</Link>
-                </Button>
+              <div className="hidden items-center gap-3 sm:flex">
+                <SlantedButton variant="outline" size="sm" href="/login">
+                  Sign in
+                </SlantedButton>
+                <SlantedButton size="sm" href="/register">
+                  Create account
+                </SlantedButton>
               </div>
             )}
 
@@ -174,24 +217,25 @@ export default function Navbar() {
 
         <SheetContent side="right" className="flex w-72 flex-col p-0">
           <SheetHeader className="border-b border-border p-6">
-            <SheetTitle className="font-heading text-base uppercase tracking-[0.2em]">
-              <span className="text-primary">MV</span> Esports
-            </SheetTitle>
+            <SheetTitle className="sr-only">MV Esports menu</SheetTitle>
+            <Wordmark className="text-base" />
           </SheetHeader>
 
           {navLinks.length > 0 ? (
             <nav className="flex flex-col gap-1 p-4" aria-label="Mobile primary">
               {navLinks.map(({ href, label }) => {
-                const active = pathname === href || pathname.startsWith(`${href}/`);
+                const active =
+                  pathname === href || pathname.startsWith(`${href}/`);
                 return (
                   <SheetClose asChild key={href}>
                     <Link
                       href={href}
-                      className={
+                      className={cn(
+                        "font-display px-3 py-2.5 text-sm font-semibold uppercase tracking-wider transition-colors",
                         active
-                          ? "rounded-md px-3 py-2 text-sm font-medium text-foreground bg-muted"
-                          : "rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }
+                          ? "text-primary"
+                          : "text-muted-foreground hover:text-primary",
+                      )}
                     >
                       {label}
                     </Link>
@@ -248,22 +292,22 @@ export default function Navbar() {
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col items-stretch gap-3">
                 <SheetClose asChild>
-                  <Button asChild className="w-full">
-                    <Link href="/login">Sign in</Link>
-                  </Button>
+                  <SlantedButton size="sm" href="/register">
+                    Create account
+                  </SlantedButton>
                 </SheetClose>
                 <SheetClose asChild>
-                  <Button asChild variant="outline" className="w-full">
-                    <Link href="/register">Create account</Link>
-                  </Button>
+                  <SlantedButton variant="outline" size="sm" href="/login">
+                    Sign in
+                  </SlantedButton>
                 </SheetClose>
               </div>
             )}
           </div>
         </SheetContent>
       </Sheet>
-    </header>
+    </motion.header>
   );
 }

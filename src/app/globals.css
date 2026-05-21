@@ -8,6 +8,9 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
 
+  /* Display tier — Saira Condensed (wired via next/font in app/layout.tsx). */
+  --font-display: var(--font-saira);
+
   /* Brand accent — orange on black. Values defined in :root / .dark below. */
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
@@ -49,6 +52,14 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* HUD glow shadows — orange at varying alpha. Reserved for live / hero /
+     featured slots. Default surfaces should NOT carry these. */
+  --shadow-glow-xs: 0 0 8px color-mix(in oklch, var(--primary) 22%, transparent);
+  --shadow-glow-sm: 0 0 14px color-mix(in oklch, var(--primary) 30%, transparent);
+  --shadow-glow-md: 0 0 26px color-mix(in oklch, var(--primary) 40%, transparent);
+  --shadow-glow-lg: 0 0 60px color-mix(in oklch, var(--primary) 55%, transparent);
+  --shadow-glow-inset: inset 0 0 24px color-mix(in oklch, var(--primary) 22%, transparent);
 }
 
 :root {
@@ -58,9 +69,9 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: #fb8527;
+  --primary: #e0731f;
   --primary-foreground: #000000;
-  --primary-hover: #fb923c;
+  --primary-hover: #fb8527;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -94,9 +105,9 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: #fb8527;
+  --primary: #e0731f;
   --primary-foreground: #000000;
-  --primary-hover: #fb923c;
+  --primary-hover: #fb8527;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -131,5 +142,119 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   MV Esports — hybrid tactical+neon utility primitives.
+
+   Defaults stay tactical (thin, sharp, restrained). Reach for utilities
+   prefixed `hud-`, `text-stroke-`, `scanlines`, or any `shadow-glow-*` token
+   only for hero / live-state / featured slots — otherwise the platform reads
+   as "everything glows" instead of "competitive."
+--------------------------------------------------------------------------- */
+
+/* Display tier — Saira Condensed at heavy weight, uppercase, tight leading,
+   wide tracking. Body and UI stay Figtree. Avoid the `text-*` Tailwind
+   namespace: v4 silently drops `color` on conflicting names. */
+@utility display {
+  font-family: var(--font-display), ui-sans-serif, sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 0.95;
+  text-transform: uppercase;
+}
+
+/* Kicker label — small uppercase orange caption sitting above a heading.
+   Renamed from text-kicker for the same Tailwind-v4 namespace reason. */
+@utility kicker {
+  font-size: 0.75rem;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+/* HUD grid — primary-tinted lines with major+minor hierarchy. Minor lines
+   every 48px, stronger lines every 192px (4x). Engineering-blueprint feel
+   instead of flat tablecloth. Stack as a background-image on hero or
+   featured surfaces — never on default cards. */
+@utility hud-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in oklch, var(--primary) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--primary) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(to right, color-mix(in oklch, var(--primary) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--primary) 8%, transparent) 1px, transparent 1px);
+  background-size:
+    192px 192px,
+    192px 192px,
+    48px 48px,
+    48px 48px;
+}
+
+/* Coarser hud-grid for cards / smaller surfaces. Minor every 16px, major
+   every 64px (4x). */
+@utility hud-grid-fine {
+  background-image:
+    linear-gradient(to right, color-mix(in oklch, var(--primary) 18%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--primary) 18%, transparent) 1px, transparent 1px),
+    linear-gradient(to right, color-mix(in oklch, var(--primary) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--primary) 7%, transparent) 1px, transparent 1px);
+  background-size:
+    64px 64px,
+    64px 64px,
+    16px 16px,
+    16px 16px;
+}
+
+/* Radial vignette fade — soft orange glow centred on a surface, fading to
+   transparent. Use on the hero behind the HUD grid. */
+@utility hud-vignette {
+  background-image: radial-gradient(
+    ellipse at center,
+    color-mix(in oklch, var(--primary) 22%, transparent) 0%,
+    transparent 65%
+  );
+}
+
+/* Vignette mask — fades a layer out toward the edges so textures (grid,
+   noise, scanlines) attenuate with the hero's bright centre instead of
+   running all the way to the corners. Apply on the texture layer itself. */
+@utility mask-vignette {
+  -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 90%);
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 90%);
+}
+
+/* Corner tick marks — short orange L-brackets in opposite corners (Rocket-
+   League-promo ref). Apply on a positioned container with overflow-visible.
+   Pairs nicely with featured-card and slanted-card surfaces. */
+@utility corner-ticks {
+  position: relative;
+
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-color: var(--primary);
+    border-style: solid;
+    border-width: 0;
+    pointer-events: none;
+  }
+
+  &::before {
+    top: 6px;
+    right: 6px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+  }
+
+  &::after {
+    bottom: 6px;
+    left: 6px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
   }
 }

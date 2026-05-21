@@ -1,3 +1,6 @@
+import type { Game } from "@/types/games";
+import type { TournamentHost } from "@/types/tournament-hosts";
+
 export type TournamentStatus =
   | "draft_pending_review"
   | "draft"
@@ -10,6 +13,15 @@ export type TournamentStatus =
 export type ParticipantType = "team" | "player";
 
 export type RegistrationType = "open" | "invite_only" | "signed_only";
+
+// Backend ships prize pool as a nested object (or null) so we don't deal
+// with both-null on two scalars. Format the amount in the renderer.
+export type PrizePool = { amount: number; currency: string };
+
+export function formatPrizePool(pp: PrizePool | null | undefined): string | null {
+  if (!pp) return null;
+  return `${pp.currency} ${pp.amount.toLocaleString()}`;
+}
 
 export type Tournament = {
   id: number;
@@ -38,8 +50,25 @@ export type Tournament = {
   stream_url: string | null;
   banner_url: string | null;
   max_participants: number | null;
+  // Freeform tournament-level format hint (e.g. "5v5", "1v1", "BO5 finals").
+  // Tournament-level rather than game-level since different tournaments of the
+  // same game can run different formats.
+  format_label: string | null;
+  // Nested `{ amount, currency }` or null. Use `formatPrizePool` to render.
+  prize_pool: PrizePool | null;
   created_at: string;
   updated_at: string;
+
+  // Eager-loaded relationships — present on the index/show responses, which
+  // call ->with(['game', 'host.user', 'organization']).
+  game?: Game;
+  host?: TournamentHost;
+
+  // Optional denormalised counts — backend adds these via withCount when the
+  // pending public-API enrichment commit ships. Present on the public list
+  // endpoint, undefined elsewhere. Front-end falls back gracefully.
+  live_match_count?: number;
+  registrations_count?: number;
 };
 
 export const TERMINAL_STATUSES: ReadonlySet<TournamentStatus> = new Set([

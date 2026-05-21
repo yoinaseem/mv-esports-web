@@ -27,6 +27,16 @@ export async function getGame(id: number): Promise<Game> {
   return response.data;
 }
 
+// Public path — resolves by slug instead of ID. Backend route added in the
+// public-API enrichment commit.
+export async function getGameBySlug(slug: string): Promise<Game> {
+  const response = await apiRequest<{ data: Game }>(`/games/by-slug/${slug}`, {
+    method: "GET",
+    skipAuth: true,
+  });
+  return response.data;
+}
+
 export async function createGame(payload: GamePayload): Promise<Game> {
   const response = await apiRequest<{ data: Game }>("/games", {
     method: "POST",

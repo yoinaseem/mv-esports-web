@@ -56,6 +56,16 @@ export async function getTournament(id: number): Promise<Tournament> {
   return response.data;
 }
 
+// Public path — resolves by slug instead of ID. Backend route added in the
+// public-API enrichment commit. Anonymous-callable (Sanctum is opportunistic).
+export async function getTournamentBySlug(slug: string): Promise<Tournament> {
+  const response = await apiRequest<{ data: Tournament }>(
+    `/tournaments/by-slug/${slug}`,
+    { skipAuth: true },
+  );
+  return response.data;
+}
+
 export async function updateTournament(
   id: number,
   payload: TournamentUpdatePayload,

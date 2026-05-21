@@ -9,13 +9,32 @@ type StageViewProps = {
   stage: Stage;
   matches: ReadonlyArray<TournamentMatch>;
   onMatchClick?: (match: TournamentMatch) => void;
+  // Override the default bracket viewer height. Public detail pages want a
+  // taller container; admin/host's denser layout sticks with the default.
+  containerHeight?: number;
+  // Visual scale — `large` bumps boxHeight + spacing so the bracket feels
+  // premium on public detail pages. `default` keeps the admin density.
+  size?: "default" | "large";
 };
 
 // Dispatcher: switches on stage.format to pick the right viewer. Single elim
 // and round-robin ship now; double elim placeholder until its own commit.
-export function StageView({ stage, matches, onMatchClick }: StageViewProps) {
+export function StageView({
+  stage,
+  matches,
+  onMatchClick,
+  containerHeight,
+  size,
+}: StageViewProps) {
   if (stage.format === "single_elim") {
-    return <SingleEliminationBracket matches={matches} onMatchClick={onMatchClick} />;
+    return (
+      <SingleEliminationBracket
+        matches={matches}
+        onMatchClick={onMatchClick}
+        containerHeight={containerHeight}
+        size={size}
+      />
+    );
   }
 
   if (stage.format === "round_robin") {

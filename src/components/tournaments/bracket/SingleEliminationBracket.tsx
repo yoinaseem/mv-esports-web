@@ -13,13 +13,32 @@ import { StandaloneMatchCard } from "@/components/tournaments/bracket/Standalone
 import { bracketTheme } from "@/components/tournaments/bracket/bracketTheme";
 import { transformMatchForLib } from "@/components/tournaments/bracket/transform";
 
+type BracketSize = "default" | "large";
+
 type Props = {
   matches: ReadonlyArray<TournamentMatch>;
   onMatchClick?: (match: TournamentMatch) => void;
   containerHeight?: number;
+  // Visual scale of the bracket. `default` is the admin/host layout that
+  // fits inside denser surfaces; `large` is for the public detail page where
+  // we have more screen real estate and want the bracket to feel premium.
+  size?: BracketSize;
 };
 
-export function SingleEliminationBracket({ matches, onMatchClick, containerHeight = 560 }: Props) {
+const OPTIONS_BY_SIZE: Record<
+  BracketSize,
+  { spaceBetweenColumns: number; spaceBetweenRows: number; boxHeight: number }
+> = {
+  default: { spaceBetweenColumns: 60, spaceBetweenRows: 24, boxHeight: 72 },
+  large: { spaceBetweenColumns: 100, spaceBetweenRows: 32, boxHeight: 100 },
+};
+
+export function SingleEliminationBracket({
+  matches,
+  onMatchClick,
+  containerHeight = 560,
+  size = "default",
+}: Props) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(960);
 
@@ -81,9 +100,7 @@ export function SingleEliminationBracket({ matches, onMatchClick, containerHeigh
             },
             connectorColor: "#52525b",
             connectorColorHighlight: "#fb8527",
-            spaceBetweenColumns: 60,
-            spaceBetweenRows: 24,
-            boxHeight: 72,
+            ...OPTIONS_BY_SIZE[size],
           },
         }}
         onMatchClick={(args) => {
