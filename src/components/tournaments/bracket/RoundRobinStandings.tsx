@@ -1,8 +1,17 @@
 "use client";
 
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+
+import { cn } from "@/lib/utils";
 import { type MorphAlias, type TournamentMatch } from "@/types/matches";
 import { participantDisplayName, type Participant } from "@/types/participants";
 import type { RoundRobinConfig, Stage } from "@/types/stages";
+import type {
+  StageQualification,
+  TopNConfig,
+  TopNPerGroupConfig,
+} from "@/types/stage-qualifications";
 import {
   Table,
   TableBody,
@@ -36,6 +45,76 @@ type GroupBucket = {
   matches: TournamentMatch[];
   standings: ParticipantStats[];
 };
+
+// Visual aid only — backend does authoritative selection on advance.
+function participantKey(s: ParticipantStats): string {
+  return `${s.type}-${s.id}`;
+}
+
+function compareStandings(x: ParticipantStats, y: ParticipantStats): number {
+  const xPts = pointsFor(x);
+  const yPts = pointsFor(y);
+  if (xPts !== yPts) return yPts - xPts;
+  const xDiff = x.gameWins - x.gameLosses;
+  const yDiff = y.gameWins - y.gameLosses;
+  if (xDiff !== yDiff) return yDiff - xDiff;
+  if (y.gameWins !== x.gameWins) return y.gameWins - x.gameWins;
+  return x.name.localeCompare(y.name);
+}
+
+function buildQualifyingSet(
+  rules: ReadonlyArray<StageQualification>,
+  buckets: GroupBucket[],
+): Set<string> {
+  const qualified = new Set<string>();
+
+  for (const rule of rules) {
+    if (rule.rule_type === "all") {
+      for (const bucket of buckets) {
+        for (const s of bucket.standings) qualified.add(participantKey(s));
+      }
+    } else if (rule.rule_type === "top_n_per_group") {
+      const n = (rule.rule_config as TopNPerGroupConfig).per_group;
+      for (const bucket of buckets) {
+        const take = Math.min(n, bucket.standings.length);
+        for (let i = 0; i < take; i++) {
+          qualified.add(participantKey(bucket.standings[i]));
+        }
+      }
+    } else if (rule.rule_type === "top_n") {
+      const n = (rule.rule_config as TopNConfig).n;
+      const merged: ParticipantStats[] = [];
+      for (const bucket of buckets) {
+        for (const s of bucket.standings) merged.push(s);
+      }
+      merged.sort(compareStandings);
+      const take = Math.min(n, merged.length);
+      for (let i = 0; i < take; i++) qualified.add(participantKey(merged[i]));
+    }
+    // "manual" — backend selects explicitly; nothing to infer here.
+  }
+
+  return qualified;
+}
+
+function ruleCaption(rule: StageQualification): string | null {
+  if (rule.rule_type === "top_n_per_group") {
+    const n = (rule.rule_config as TopNPerGroupConfig).per_group;
+    return n === 1
+      ? "Group winner advances to the next stage"
+      : `Top ${n} per group advance to the next stage`;
+  }
+  if (rule.rule_type === "top_n") {
+    const n = (rule.rule_config as TopNConfig).n;
+    return n === 1
+      ? "Top 1 advances to the next stage"
+      : `Top ${n} advance to the next stage`;
+  }
+  if (rule.rule_type === "all") {
+    return "All participants advance to the next stage";
+  }
+  return null;
+}
 
 function isMatchComplete(status: TournamentMatch["status"]): boolean {
   return status === "completed" || status === "walkover";
@@ -81,8 +160,18 @@ function bucketize(matches: ReadonlyArray<TournamentMatch>): GroupBucket[] {
     const statsByKey = new Map<string, ParticipantStats>();
 
     for (const m of groupMatches) {
-      const a = ensureStats(statsByKey, m.participant_a_type, m.participant_a_id, m.participant_a);
-      const b = ensureStats(statsByKey, m.participant_b_type, m.participant_b_id, m.participant_b);
+      const a = ensureStats(
+        statsByKey,
+        m.participant_a_type,
+        m.participant_a_id,
+        m.participant_a,
+      );
+      const b = ensureStats(
+        statsByKey,
+        m.participant_b_type,
+        m.participant_b_id,
+        m.participant_b,
+      );
       if (!a || !b) continue;
       if (!isMatchComplete(m.status)) continue;
 
@@ -113,21 +202,13 @@ function bucketize(matches: ReadonlyArray<TournamentMatch>): GroupBucket[] {
       }
     }
 
-    const standings = Array.from(statsByKey.values()).sort((x, y) => {
-      const xPts = pointsFor(x);
-      const yPts = pointsFor(y);
-      if (xPts !== yPts) return yPts - xPts;
-      const xDiff = x.gameWins - x.gameLosses;
-      const yDiff = y.gameWins - y.gameLosses;
-      if (xDiff !== yDiff) return yDiff - xDiff;
-      if (y.gameWins !== x.gameWins) return y.gameWins - x.gameWins;
-      return x.name.localeCompare(y.name);
-    });
+    const standings = Array.from(statsByKey.values()).sort(compareStandings);
 
     buckets.push({
       groupNumber,
       matches: groupMatches.slice().sort((p, q) => {
-        if (p.bracket_round !== q.bracket_round) return p.bracket_round - q.bracket_round;
+        if (p.bracket_round !== q.bracket_round)
+          return p.bracket_round - q.bracket_round;
         return p.bracket_position - q.bracket_position;
       }),
       standings,
@@ -147,10 +228,18 @@ type GroupBlockProps = {
   // Per-leg round count derived once for the stage. group_size is uniform
   // across groups so this is the same per bucket.
   roundsPerLeg: number;
+  qualifiedKeys: ReadonlySet<string>;
   onMatchClick?: (match: TournamentMatch) => void;
-}
+};
 
-function GroupBlock({ bucket, showGroupLabel, legs, roundsPerLeg, onMatchClick }: GroupBlockProps) {
+function GroupBlock({
+  bucket,
+  showGroupLabel,
+  legs,
+  roundsPerLeg,
+  qualifiedKeys,
+  onMatchClick,
+}: GroupBlockProps) {
   const { groupNumber, matches, standings } = bucket;
 
   // Group matches by round for display.
@@ -198,25 +287,64 @@ function GroupBlock({ bucket, showGroupLabel, legs, roundsPerLeg, onMatchClick }
           <TableBody>
             {standings.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={8}
+                  className="py-8 text-center text-sm text-muted-foreground"
+                >
                   No matches yet.
                 </TableCell>
               </TableRow>
             ) : (
               standings.map((s, index) => {
                 const diff = s.gameWins - s.gameLosses;
+                const isQualified = qualifiedKeys.has(participantKey(s));
                 return (
-                  <TableRow key={`${s.type}-${s.id}`}>
-                    <TableCell className="font-medium tabular-nums">{index + 1}</TableCell>
-                    <TableCell className="font-medium">{s.name}</TableCell>
+                  <TableRow
+                    key={`${s.type}-${s.id}`}
+                    className={cn(
+                      isQualified && "bg-primary/10 hover:bg-primary/15",
+                    )}
+                  >
+                    <TableCell className="font-medium tabular-nums">
+                      {isQualified ? (
+                        <span className="flex items-center gap-1">
+                          <HugeiconsIcon
+                            icon={ArrowRight01Icon}
+                            className="size-3 text-primary"
+                            aria-label="Advances to next stage"
+                          />
+                          {index + 1}
+                        </span>
+                      ) : (
+                        index + 1
+                      )}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        "font-medium",
+                        isQualified && "text-primary",
+                      )}
+                    >
+                      {s.name}
+                    </TableCell>
                     <TableCell className="text-right font-semibold tabular-nums text-primary">
                       {pointsFor(s)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">{s.played}</TableCell>
-                    <TableCell className="text-right tabular-nums">{s.wins}</TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">{s.draws}</TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">{s.losses}</TableCell>
-                    <TableCell className={`text-right tabular-nums ${diff > 0 ? "text-primary" : diff < 0 ? "text-muted-foreground" : ""}`}>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {s.played}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {s.wins}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {s.draws}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {s.losses}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right tabular-nums ${diff > 0 ? "text-primary" : diff < 0 ? "text-muted-foreground" : ""}`}
+                    >
                       {diff > 0 ? `+${diff}` : diff}
                     </TableCell>
                   </TableRow>
@@ -239,7 +367,9 @@ function GroupBlock({ bucket, showGroupLabel, legs, roundsPerLeg, onMatchClick }
                   <StandaloneMatchCard
                     key={match.id}
                     match={match}
-                    onClick={onMatchClick ? () => onMatchClick(match) : undefined}
+                    onClick={
+                      onMatchClick ? () => onMatchClick(match) : undefined
+                    }
                   />
                 ))}
               </div>
@@ -255,27 +385,50 @@ type Props = {
   stage: Stage;
   matches: ReadonlyArray<TournamentMatch>;
   onMatchClick?: (match: TournamentMatch) => void;
+  // Rules pulling FROM this stage (caller filters by source_stage_id).
+  qualifyingRules?: ReadonlyArray<StageQualification>;
 };
 
-export function RoundRobinStandings({ stage, matches, onMatchClick }: Props) {
+export function RoundRobinStandings({
+  stage,
+  matches,
+  onMatchClick,
+  qualifyingRules,
+}: Props) {
   if (matches.length === 0) {
     return (
       <div className="flex items-center justify-center rounded-md border border-dashed border-border p-12">
-        <p className="text-sm text-muted-foreground">No matches yet for this stage.</p>
+        <p className="text-sm text-muted-foreground">
+          No matches yet for this stage.
+        </p>
       </div>
     );
   }
 
   const config = stage.config as RoundRobinConfig;
   const legs = Math.max(1, config.legs ?? 1);
-  // Derive rounds-per-leg from the data: the RR generator emits all matches up
-  // front, so max bracket_round / legs is the per-leg round count regardless
-  // of group_size parity (avoids guessing whether odd sizes use phantoms).
-  const maxRound = matches.reduce((acc, m) => Math.max(acc, m.bracket_round), 0);
-  const roundsPerLeg = legs > 0 ? Math.max(1, Math.round(maxRound / legs)) : maxRound;
+  // Derived from data — avoids guessing whether odd group sizes use phantoms.
+  const maxRound = matches.reduce(
+    (acc, m) => Math.max(acc, m.bracket_round),
+    0,
+  );
+  const roundsPerLeg =
+    legs > 0 ? Math.max(1, Math.round(maxRound / legs)) : maxRound;
 
   const buckets = bucketize(matches);
   const showGroupLabel = buckets.length > 1;
+
+  // Mid-tournament standings could still flip — only highlight when final.
+  const showQualifyingHighlight =
+    stage.status === "completed" && (qualifyingRules?.length ?? 0) > 0;
+  const qualifiedKeys = showQualifyingHighlight
+    ? buildQualifyingSet(qualifyingRules ?? [], buckets)
+    : new Set<string>();
+  const captionLines = showQualifyingHighlight
+    ? (qualifyingRules ?? [])
+        .map(ruleCaption)
+        .filter((s): s is string => s !== null)
+    : [];
 
   return (
     <div className="space-y-8">
@@ -286,9 +439,25 @@ export function RoundRobinStandings({ stage, matches, onMatchClick }: Props) {
           showGroupLabel={showGroupLabel}
           legs={legs}
           roundsPerLeg={roundsPerLeg}
+          qualifiedKeys={qualifiedKeys}
           onMatchClick={onMatchClick}
         />
       ))}
+
+      {captionLines.length > 0 ? (
+        <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+          {captionLines.map((line, idx) => (
+            <p key={idx} className="flex items-center gap-1.5">
+              <HugeiconsIcon
+                icon={ArrowRight01Icon}
+                className="size-3 text-primary"
+                aria-hidden
+              />
+              <span>{line}</span>
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

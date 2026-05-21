@@ -6,9 +6,11 @@ import { SlantedButton } from "@/components/site/SlantedButton";
 import { StageView } from "@/components/tournaments/bracket/StageView";
 import { ApiError } from "@/lib/api-client";
 import { listMatches } from "@/lib/api/matches";
+import { listStageQualifications } from "@/lib/api/stage-qualifications";
 import { listStages } from "@/lib/api/stages";
 import { getTournamentBySlug } from "@/lib/api/tournaments";
 import type { TournamentMatch } from "@/types/matches";
+import type { StageQualification } from "@/types/stage-qualifications";
 import {
   formatPrizePool,
   type Tournament,
@@ -80,10 +82,7 @@ function infoRowsFor(t: Tournament): ReadonlyArray<InfoRow> {
   if (t.host?.display_name) {
     rows.push({ kicker: "Hosted by", value: t.host.display_name });
   }
-  if (
-    t.status === "registration_open" &&
-    t.registration_closes_at
-  ) {
+  if (t.status === "registration_open" && t.registration_closes_at) {
     rows.push({
       kicker: "Registration closes",
       value: formatDateTime(t.registration_closes_at),
@@ -120,23 +119,44 @@ export default async function TournamentDetailPage({ params }: RouteProps) {
     throw e;
   }
 
-  const stages = (await listStages(tournament.id)).slice().sort(
-    (a, b) => a.sort_order - b.sort_order,
-  );
+  const stages = (await listStages(tournament.id))
+    .slice()
+    .sort((a, b) => a.sort_order - b.sort_order);
 
-  // Pull matches for any stage that's past "pending" (bracket built). For
-  // pre-build statuses we skip the fetch entirely — the bracket section
-  // shows a placeholder instead.
+  // Pre-build stages have no matches; skip the fetch entirely. Qualifications
+  // load in parallel for the RR qualifying-row highlight.
   const stagesWithMatches = stages.filter((s) => s.status !== "pending");
-  const matchPairs = await Promise.all(
-    stagesWithMatches.map((s) =>
-      listMatches(tournament.id, s.id).then(
-        (matches) => [s.id, matches] as const,
+  const [matchPairs, qualPairs] = await Promise.all([
+    Promise.all(
+      stagesWithMatches.map((s) =>
+        listMatches(tournament.id, s.id).then(
+          (matches) => [s.id, matches] as const,
+        ),
       ),
     ),
-  );
+    Promise.all(
+      stages.map((s) =>
+        listStageQualifications(tournament.id, s.id).then(
+          (quals) => [s.id, quals] as const,
+        ),
+      ),
+    ),
+  ]);
   const matchesByStageId: Record<number, TournamentMatch[]> =
     Object.fromEntries(matchPairs);
+
+  // Re-key qualifications by their SOURCE stage id — rules live on the
+  // target stage but identify which previous stage's participants advance.
+  const qualificationsBySourceStageId: Record<number, StageQualification[]> =
+    {};
+  for (const [, quals] of qualPairs) {
+    for (const q of quals) {
+      if (q.source_stage_id == null) continue;
+      const list = qualificationsBySourceStageId[q.source_stage_id] ?? [];
+      list.push(q);
+      qualificationsBySourceStageId[q.source_stage_id] = list;
+    }
+  }
 
   const rows = infoRowsFor(tournament);
   const bracketPending = STAGE_PENDING_STATUSES.includes(tournament.status);
@@ -190,7 +210,10 @@ export default async function TournamentDetailPage({ params }: RouteProps) {
                     <StageView
                       stage={stage}
                       matches={stageMatches}
-                      size="large"
+                      useSiteBracket
+                      qualifyingRules={
+                        qualificationsBySourceStageId[stage.id] ?? []
+                      }
                     />
                   </div>
                 );
@@ -231,7 +254,10 @@ export default async function TournamentDetailPage({ params }: RouteProps) {
           <div className="mt-2 flex flex-wrap gap-5">
             <SlantedButton href="/tournaments">All tournaments</SlantedButton>
             {tournament.game?.slug ? (
-              <SlantedButton variant="outline" href={`/games/${tournament.game.slug}`}>
+              <SlantedButton
+                variant="outline"
+                href={`/games/${tournament.game.slug}`}
+              >
                 More {tournament.game.name}
               </SlantedButton>
             ) : null}

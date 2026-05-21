@@ -146,6 +146,108 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Custom scrollbar. Thin track, primary-tinted thumb, sharp corners — in
+   line with the tactical/slanted family. Scoped via `.site-scrollbar` so
+   admin/shadcn defaults are untouched.
+--------------------------------------------------------------------------- */
+@layer components {
+  .site-scrollbar {
+    /* Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--primary) 40%, transparent)
+      transparent;
+  }
+
+  .site-scrollbar::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+
+  .site-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .site-scrollbar::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--primary) 40%, transparent);
+    border-radius: 0;
+    transition: background 0.15s ease-out;
+  }
+
+  .site-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--primary) 75%, transparent);
+  }
+
+  .site-scrollbar::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+/* Site bracket — pure-CSS layout, SVG connectors. See Connector.tsx + the
+   helpers in site/bracket/ for the math; dasharray/dashoffset for the
+   line-draw animation are set inline on the active path. */
+@layer components {
+  .site-bracket {
+    --bracket-match-height: 84px;
+    --bracket-row-gap: 28px;
+    --bracket-col-width: 240px;
+    --bracket-col-gap: 80px;
+    --bracket-connector: #52525b;
+    --bracket-connector-active: var(--primary);
+    --bracket-connector-width: 2px;
+    --bracket-line-draw-duration: 0.9s;
+  }
+
+  .site-bracket-match {
+    position: relative;
+  }
+
+  .site-bracket-connector {
+    position: absolute;
+    left: 100%;
+    width: var(--bracket-col-gap);
+    height: var(--bracket-half-sibling);
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  .site-bracket-connector[data-direction="top"] {
+    top: 50%;
+  }
+
+  .site-bracket-connector[data-direction="bottom"] {
+    bottom: 50%;
+  }
+
+  /* Feed variant: horizontal line at the match's middle, no vertical span. */
+  .site-bracket-connector[data-direction="feed"] {
+    top: 50%;
+    height: 4px;
+    margin-top: -2px;
+  }
+
+  .site-bracket-connector-base {
+    stroke: var(--bracket-connector);
+    stroke-width: var(--bracket-connector-width);
+    fill: none;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .site-bracket-connector-active {
+    stroke: var(--bracket-connector-active);
+    stroke-width: var(--bracket-connector-width);
+    fill: none;
+    vector-effect: non-scaling-stroke;
+    transition: stroke-dashoffset var(--bracket-line-draw-duration) ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .site-bracket-connector-active {
+      transition: none;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
    MV Esports — hybrid tactical+neon utility primitives.
 
    Defaults stay tactical (thin, sharp, restrained). Reach for utilities

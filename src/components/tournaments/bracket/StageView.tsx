@@ -2,31 +2,40 @@
 
 import type { TournamentMatch } from "@/types/matches";
 import type { Stage } from "@/types/stages";
+import type { StageQualification } from "@/types/stage-qualifications";
 import { RoundRobinStandings } from "@/components/tournaments/bracket/RoundRobinStandings";
 import { SingleEliminationBracket } from "@/components/tournaments/bracket/SingleEliminationBracket";
+import { SiteBracket } from "@/components/site/bracket/SiteBracket";
 
 type StageViewProps = {
   stage: Stage;
   matches: ReadonlyArray<TournamentMatch>;
   onMatchClick?: (match: TournamentMatch) => void;
-  // Override the default bracket viewer height. Public detail pages want a
-  // taller container; admin/host's denser layout sticks with the default.
+  // Legacy props honoured only by the @g-loot SingleEliminationBracket
+  // fallback; ignored by SiteBracket (which sizes via CSS).
   containerHeight?: number;
-  // Visual scale — `large` bumps boxHeight + spacing so the bracket feels
-  // premium on public detail pages. `default` keeps the admin density.
   size?: "default" | "large";
+  // Routes single-elim / double-elim through the in-house SiteBracket.
+  // Both callers pass true; the @g-loot fallback below is now dead code
+  // pending dependency removal.
+  useSiteBracket?: boolean;
+  // RR-only — bracket formats encode advancement on each match.
+  qualifyingRules?: ReadonlyArray<StageQualification>;
 };
 
-// Dispatcher: switches on stage.format to pick the right viewer. Single elim
-// and round-robin ship now; double elim placeholder until its own commit.
 export function StageView({
   stage,
   matches,
   onMatchClick,
   containerHeight,
   size,
+  useSiteBracket,
+  qualifyingRules,
 }: StageViewProps) {
   if (stage.format === "single_elim") {
+    if (useSiteBracket) {
+      return <SiteBracket matches={matches} onMatchClick={onMatchClick} />;
+    }
     return (
       <SingleEliminationBracket
         matches={matches}
@@ -38,14 +47,24 @@ export function StageView({
   }
 
   if (stage.format === "round_robin") {
-    return <RoundRobinStandings stage={stage} matches={matches} onMatchClick={onMatchClick} />;
+    return (
+      <RoundRobinStandings
+        stage={stage}
+        matches={matches}
+        onMatchClick={onMatchClick}
+        qualifyingRules={qualifyingRules}
+      />
+    );
   }
 
   if (stage.format === "double_elim") {
+    if (useSiteBracket) {
+      return <SiteBracket matches={matches} onMatchClick={onMatchClick} />;
+    }
     return (
       <div className="rounded-md border border-dashed border-border p-12 text-center">
         <p className="text-sm text-muted-foreground">
-          Double-elimination bracket viewer coming in the next commit.
+          Double-elimination requires the in-house renderer (useSiteBracket).
         </p>
       </div>
     );
